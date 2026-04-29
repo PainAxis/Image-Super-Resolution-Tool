@@ -1,0 +1,48 @@
+{
+    "lang_name": "English",
+    "app_title": "FSR 1.0 Image Super-Resolution",
+
+    "menu_file": "File",
+    "menu_open": "Open...",
+    "menu_save": "Save Result...",
+    "menu_exit": "Exit",
+    "menu_view": "View",
+    "menu_fit_window": "Fit to Window",
+    "menu_zoom_100": "Zoom 100%",
+    "menu_language": "Language",
+    "menu_help": "Help",
+    "menu_about": "About",
+
+    "btn_open": "Open Image",
+    "lbl_scale": "Scale:",
+    "lbl_sharpness": "Sharpness:",
+    "btn_process": "Process",
+    "btn_save": "Save Result",
+    "chk_antialias": "Anti-Alias",
+
+    "frame_original": "Original",
+    "frame_result": "Result (FSR 1.0)",
+
+    "status_ready": "Ready",
+    "status_loaded": "Loaded: {name}  ({w}x{h})",
+    "status_processing": "Processing... {scale}x upscale",
+    "status_progress": "Processing... {pct}%",
+    "status_complete": "Complete: {w}x{h}  ({scale}x, {elapsed:.1f}s)",
+    "status_error": "Error",
+    "status_saved": "Saved: {name}",
+
+    "dialog_open_title": "Open Image",
+    "dialog_save_title": "Save Result",
+    "dialog_error_title": "Error",
+    "dialog_about_title": "About",
+    "dialog_about_text": "FSR 1.0 Image Super-Resolution\n\nBased on AMD FidelityFX Super Resolution 1.0\nFXAA anti-aliasing\nImplemented in Python + NumPy",
+    "dialog_load_failed": "Failed to load image:\n{error}",
+    "dialog_process_failed": "Processing failed:\n{error}",
+    "dialog_save_failed": "Failed to save:\n{error}",
+
+    "filetype_images": "Image files",
+    "filetype_all": "All files",
+    "filetype_png": "PNG",
+    "filetype_jpeg": "JPEG",
+    "filetype_bmp": "BMP"
+}

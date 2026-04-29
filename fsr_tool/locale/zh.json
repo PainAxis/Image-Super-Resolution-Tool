@@ -1,0 +1,49 @@
+{
+    "lang_name": "中文",
+
+    "app_title": "FSR 1.0 图片超分辨率",
+
+    "menu_file": "文件",
+    "menu_open": "打开...",
+    "menu_save": "保存结果...",
+    "menu_exit": "退出",
+    "menu_view": "视图",
+    "menu_fit_window": "适应窗口",
+    "menu_zoom_100": "100% 缩放",
+    "menu_language": "语言",
+    "menu_help": "帮助",
+    "menu_about": "关于",
+
+    "btn_open": "打开图片",
+    "lbl_scale": "缩放:",
+    "lbl_sharpness": "锐化:",
+    "btn_process": "处理",
+    "btn_save": "保存结果",
+    "chk_antialias": "抗锯齿",
+
+    "frame_original": "原图",
+    "frame_result": "结果 (FSR 1.0)",
+
+    "status_ready": "就绪",
+    "status_loaded": "已加载: {name}  ({w}x{h})",
+    "status_processing": "处理中... {scale}x 放大",
+    "status_progress": "处理中... {pct}%",
+    "status_complete": "完成: {w}x{h}  ({scale}x, {elapsed:.1f}s)",
+    "status_error": "错误",
+    "status_saved": "已保存: {name}",
+
+    "dialog_open_title": "打开图片",
+    "dialog_save_title": "保存结果",
+    "dialog_error_title": "错误",
+    "dialog_about_title": "关于",
+    "dialog_about_text": "FSR 1.0 图片超分辨率\n\n基于 AMD FidelityFX Super Resolution 1.0\nFXAA 抗锯齿\nPython + NumPy 实现",
+    "dialog_load_failed": "图片加载失败:\n{error}",
+    "dialog_process_failed": "处理失败:\n{error}",
+    "dialog_save_failed": "保存失败:\n{error}",
+
+    "filetype_images": "图片文件",
+    "filetype_all": "所有文件",
+    "filetype_png": "PNG",
+    "filetype_jpeg": "JPEG",
+    "filetype_bmp": "BMP"
+}

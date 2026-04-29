@@ -1,0 +1,49 @@
+{
+    "lang_name": "Русский",
+
+    "app_title": "FSR 1.0 Сверхразрешение",
+
+    "menu_file": "Файл",
+    "menu_open": "Открыть...",
+    "menu_save": "Сохранить...",
+    "menu_exit": "Выход",
+    "menu_view": "Вид",
+    "menu_fit_window": "По размеру окна",
+    "menu_zoom_100": "Масштаб 100%",
+    "menu_language": "Язык",
+    "menu_help": "Справка",
+    "menu_about": "О программе",
+
+    "btn_open": "Открыть",
+    "lbl_scale": "Масштаб:",
+    "lbl_sharpness": "Резкость:",
+    "btn_process": "Обработать",
+    "btn_save": "Сохранить",
+    "chk_antialias": "Сглаживание",
+
+    "frame_original": "Исходное",
+    "frame_result": "Результат (FSR 1.0)",
+
+    "status_ready": "Готов",
+    "status_loaded": "Загружено: {name}  ({w}x{h})",
+    "status_processing": "Обработка... x{scale}",
+    "status_progress": "Обработка... {pct}%",
+    "status_complete": "Готово: {w}x{h}  (x{scale}, {elapsed:.1f}с)",
+    "status_error": "Ошибка",
+    "status_saved": "Сохранено: {name}",
+
+    "dialog_open_title": "Открыть изображение",
+    "dialog_save_title": "Сохранить результат",
+    "dialog_error_title": "Ошибка",
+    "dialog_about_title": "О программе",
+    "dialog_about_text": "FSR 1.0 Сверхразрешение\n\nНа основе AMD FidelityFX Super Resolution 1.0\nСглаживание FXAA\nРеализовано на Python + NumPy",
+    "dialog_load_failed": "Не удалось загрузить:\n{error}",
+    "dialog_process_failed": "Ошибка обработки:\n{error}",
+    "dialog_save_failed": "Не удалось сохранить:\n{error}",
+
+    "filetype_images": "Изображения",
+    "filetype_all": "Все файлы",
+    "filetype_png": "PNG",
+    "filetype_jpeg": "JPEG",
+    "filetype_bmp": "BMP"
+}
