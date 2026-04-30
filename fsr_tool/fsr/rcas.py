@@ -1,4 +1,4 @@
-"""RCAS -- Robust Contrast-Adaptive Sharpening (FSR 1.0 pass 2).
+"""RCAS -- Robust Contrast-Adaptive Sharpening (super-resolution pass 2).
 
 Applies adaptive sharpening that respects local contrast:
 - Stronger sharpening in high-contrast (textured) areas
@@ -12,7 +12,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
-# RCAS algorithm constants (from AMD FSR 1.0 specification)
+# RCAS algorithm constants (from AMD FidelityFX Super Resolution)
 _NEIGHBOR_COUNT = 4.0     # cardinal neighbors: left, right, up, down
 _GAIN_DENOM_SCALE = 8.0   # denominator scaling for adaptive gain
 _EPSILON = 1e-9           # prevents division by zero in flat regions

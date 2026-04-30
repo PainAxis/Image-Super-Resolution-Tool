@@ -1,4 +1,4 @@
-"""Integration tests for FSR pipeline."""
+"""Integration tests for super-resolution pipeline."""
 
 import numpy as np
 import pytest

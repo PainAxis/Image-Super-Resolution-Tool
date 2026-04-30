@@ -15,7 +15,7 @@ from fsr_tool.locale.i18n import t, set_language, on_language_change, \
 
 
 class Application:
-    """FSR 1.0 Image Super-Resolution application."""
+    """Image Super-Resolution application."""
 
     def __init__(self, root: tk.Tk):
         self.root = root

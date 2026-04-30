@@ -40,7 +40,7 @@ python run.py
 ## Project Structure
 
 ```
-FSR/
+Image-Super-Resolution-Tool/
 ├── run.py                     # entry point
 ├── requirements.txt           # dependencies
 ├── README.md

@@ -1,4 +1,4 @@
-"""FSR 1.0 processing pipeline: EASU upscale -> RCAS sharpen -> FXAA."""
+"""Super-resolution processing pipeline: EASU upscale -> RCAS sharpen -> FXAA."""
 
 from typing import Callable, Optional
 
@@ -19,7 +19,7 @@ def process_image(img: np.ndarray,
                   antialias: bool = False,
                   progress_callback: Optional[Callable[[float], None]] = None,
                   ) -> np.ndarray:
-    """Run the full FSR 1.0 pipeline.
+    """Run the full super-resolution pipeline.
 
     Args:
         img: float32 (H, W, 3) array in [0, 1].

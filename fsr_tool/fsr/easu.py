@@ -1,4 +1,4 @@
-"""EASU -- Edge-Adaptive Spatial Upsampling (FSR 1.0 pass 1).
+"""EASU -- Edge-Adaptive Spatial Upsampling (super-resolution pass 1).
 
 Upscales an image by the given factor, preserving edges by adapting the
 interpolation kernel to the local gradient direction. The kernel stretches
