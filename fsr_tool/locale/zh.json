@@ -1,7 +1,7 @@
 {
     "lang_name": "中文",
 
-    "app_title": "FSR 1.0 图片超分辨率",
+    "app_title": "图片超分辨率",
 
     "menu_file": "文件",
     "menu_open": "打开...",
@@ -22,7 +22,7 @@
     "chk_antialias": "抗锯齿",
 
     "frame_original": "原图",
-    "frame_result": "结果 (FSR 1.0)",
+    "frame_result": "结果",
 
     "status_ready": "就绪",
     "status_loaded": "已加载: {name}  ({w}x{h})",
@@ -36,7 +36,7 @@
     "dialog_save_title": "保存结果",
     "dialog_error_title": "错误",
     "dialog_about_title": "关于",
-    "dialog_about_text": "FSR 1.0 图片超分辨率\n\n基于 AMD FidelityFX Super Resolution 1.0\nFXAA 抗锯齿\nPython + NumPy 实现",
+    "dialog_about_text": "图片超分辨率\n\n超分辨率引擎: AMD FidelityFX Super Resolution 1.0\nFXAA 抗锯齿\nPython + NumPy 实现\n\n开发者: https://github.com/PainAxis",
     "dialog_load_failed": "图片加载失败:\n{error}",
     "dialog_process_failed": "处理失败:\n{error}",
     "dialog_save_failed": "保存失败:\n{error}",

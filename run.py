@@ -1,4 +1,4 @@
-"""Launch script for FSR 1.0 Image Super-Resolution tool."""
+"""Launch script for Image Super-Resolution tool."""
 
 import sys
 import os

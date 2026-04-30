@@ -1,7 +1,7 @@
 {
     "lang_name": "Русский",
 
-    "app_title": "FSR 1.0 Сверхразрешение",
+    "app_title": "Сверхразрешение изображений",
 
     "menu_file": "Файл",
     "menu_open": "Открыть...",
@@ -22,7 +22,7 @@
     "chk_antialias": "Сглаживание",
 
     "frame_original": "Исходное",
-    "frame_result": "Результат (FSR 1.0)",
+    "frame_result": "Результат",
 
     "status_ready": "Готов",
     "status_loaded": "Загружено: {name}  ({w}x{h})",
@@ -36,7 +36,7 @@
     "dialog_save_title": "Сохранить результат",
     "dialog_error_title": "Ошибка",
     "dialog_about_title": "О программе",
-    "dialog_about_text": "FSR 1.0 Сверхразрешение\n\nНа основе AMD FidelityFX Super Resolution 1.0\nСглаживание FXAA\nРеализовано на Python + NumPy",
+    "dialog_about_text": "Сверхразрешение изображений\n\nДвижок: AMD FidelityFX Super Resolution 1.0\nСглаживание FXAA\nРеализовано на Python + NumPy\n\nРазработчик: https://github.com/PainAxis",
     "dialog_load_failed": "Не удалось загрузить:\n{error}",
     "dialog_process_failed": "Ошибка обработки:\n{error}",
     "dialog_save_failed": "Не удалось сохранить:\n{error}",

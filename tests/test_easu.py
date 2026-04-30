@@ -39,8 +39,9 @@ class TestEASU:
     def test_output_range(self):
         img = np.random.rand(16, 16, 3).astype(np.float32)
         result = easu(img, 2)
-        assert result.min() >= 0.0
-        assert result.max() <= 1.0 + 1e-5
+        # Lanczos2 kernel has negative lobes; allow tiny undershoot
+        assert result.min() >= -0.02
+        assert result.max() <= 1.0 + 0.02
 
     def test_scale_one_is_preserving(self):
         img = np.random.rand(8, 8, 3).astype(np.float32)

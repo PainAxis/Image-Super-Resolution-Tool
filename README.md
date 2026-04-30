@@ -1,11 +1,10 @@
-# FSR 1.0 Image Super-Resolution
+# Image Super-Resolution Tool
 
-A desktop tool for image super-resolution based on AMD FidelityFX Super
-Resolution 1.0.
+A desktop tool for image super-resolution. Currently powered by AMD FidelityFX Super Resolution 1.0.
 
 ## Features
 
-- **FSR 1.0 upscaling**: EASU (Edge-Adaptive Spatial Upsampling) + RCAS
+- **Super-resolution upscaling**: EASU (Edge-Adaptive Spatial Upsampling) + RCAS
   (Robust Contrast-Adaptive Sharpening)
 - **FXAA anti-aliasing**: NVIDIA FXAA 3.11 post-processing
 - **Multi-language**: English, Chinese, Russian — auto-detects system locale
@@ -80,6 +79,10 @@ python -m pytest tests/ -v
 - **Pure Python + NumPy**: no GPU, no CUDA, no C++ compilation required
 - **Block processing**: all algorithms use chunked processing to bound peak memory
 - **Thread-safe**: background worker threads + main-thread UI updates
+
+## Developer
+
+[PainAxis](https://github.com/PainAxis)
 
 ## License
 
