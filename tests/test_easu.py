@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from fsr_tool.fsr.easu import easu, _lanczos2
+from sr_tool.fsr.easu import easu, _lanczos2
 
 
 class TestLanczos2:

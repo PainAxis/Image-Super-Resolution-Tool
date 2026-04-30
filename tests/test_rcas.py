@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from fsr_tool.fsr.rcas import rcas
+from sr_tool.fsr.rcas import rcas
 
 
 def test_rcas_flat_image_unchanged():

@@ -3,9 +3,9 @@
 from typing import Callable, Optional
 
 import numpy as np
-from fsr_tool.fsr.easu import easu
-from fsr_tool.fsr.rcas import rcas, DEFAULT_SHARPNESS
-from fsr_tool.fsr.antialias import fxaa
+from sr_tool.fsr.easu import easu
+from sr_tool.fsr.rcas import rcas, DEFAULT_SHARPNESS
+from sr_tool.fsr.antialias import fxaa
 
 # Progress weight allocation (must sum to 1.0)
 _WEIGHT_EASU = 0.80

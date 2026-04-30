@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from fsr_tool.fsr.pipeline import process_image
+from sr_tool.fsr.pipeline import process_image
 
 
 def test_pipeline_output_shape():

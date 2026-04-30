@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from fsr_tool.fsr.antialias import fxaa
+from sr_tool.fsr.antialias import fxaa
 
 
 def test_fxaa_shape_preserved():

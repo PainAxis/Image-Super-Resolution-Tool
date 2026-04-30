@@ -3,10 +3,10 @@
 import sys
 import os
 
-# Ensure fsr_tool is importable
+# Ensure sr_tool is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fsr_tool.gui.app import Application
+from sr_tool.gui.app import Application
 import tkinter as tk
 
 

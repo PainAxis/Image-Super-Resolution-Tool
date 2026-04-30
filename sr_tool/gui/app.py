@@ -8,9 +8,9 @@ import time
 import numpy as np
 from pathlib import Path
 
-from fsr_tool.utils import image_io
-from fsr_tool.fsr.pipeline import process_image as fsr_process
-from fsr_tool.locale.i18n import t, set_language, on_language_change, \
+from sr_tool.utils import image_io
+from sr_tool.fsr.pipeline import process_image as sr_process
+from sr_tool.locale.i18n import t, set_language, on_language_change, \
     available_languages, current_language
 
 
@@ -433,7 +433,7 @@ class Application:
         def run():
             start_time = time.time()
             try:
-                result = fsr_process(
+                result = sr_process(
                     self.source_image, scale,
                     rcas_sharpness=sharpness,
                     antialias=use_aa,

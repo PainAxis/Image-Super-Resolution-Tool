@@ -45,7 +45,7 @@ Image-Super-Resolution-Tool/
 ├── requirements.txt           # dependencies
 ├── README.md
 ├── LICENSE                    # MIT License
-├── fsr_tool/
+├── sr_tool/
 │   ├── fsr/
 │   │   ├── easu.py            # EASU upsampling
 │   │   ├── rcas.py            # RCAS sharpening
