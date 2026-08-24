@@ -37,7 +37,7 @@ _UI_CALLBACK_POLL_MS = 10
 class Application:
     """Image Super-Resolution desktop application."""
 
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk | tk.Toplevel):
         self.root = root
         self.root.title(t("app_title"))
         self.root.geometry("1200x700")
