@@ -1,5 +1,6 @@
 """Round-trip fidelity and failure-safety tests for image I/O."""
 
+import stat
 import struct
 import zlib
 from pathlib import Path
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageCms
 
+from sr_tool.utils import image_io
 from sr_tool.utils.image_io import (
     ImageIOError,
     ImageMetadata,
@@ -151,3 +153,25 @@ def test_failed_save_does_not_replace_existing_file(
         save_image(np.zeros((2, 2, 3), dtype=np.float32), destination)
     assert destination.read_bytes() == b"previous"
     assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_unsupported_directory_fsync_does_not_report_a_false_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_fsync = image_io.os.fsync
+
+    def reject_directory_fsync(descriptor: int) -> None:
+        if stat.S_ISDIR(image_io.os.fstat(descriptor).st_mode):
+            raise OSError("directory sync is unsupported")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(image_io.os, "fsync", reject_directory_fsync)
+    destination = tmp_path / "portable.png"
+    save_image(np.full((2, 3, 3), 0.25, dtype=np.float32), destination)
+    assert destination.exists()
+    np.testing.assert_allclose(
+        np.asarray(Image.open(destination), dtype=np.float32) / 255.0,
+        0.25,
+        atol=1.0 / 255.0,
+    )

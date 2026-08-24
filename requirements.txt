@@ -1,3 +1,5 @@
-# Reproducible runtime environment (Python 3.11+).
-numpy==2.3.5
+# Reproducible runtime environment (Python 3.10+). NumPy 2.2 is the final
+# release line supporting Python 3.10; newer interpreters use the current line.
+numpy==2.2.6; python_version < "3.11"
+numpy==2.3.5; python_version >= "3.11"
 Pillow==12.3.0

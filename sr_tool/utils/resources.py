@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,21 +84,37 @@ def _cgroup_available_bytes(root: Path = Path("/sys/fs/cgroup")) -> int | None:
     return None
 
 
+def _sysconf_available_bytes() -> int | None:
+    """Return available physical memory on POSIX systems that expose sysconf."""
+    sysconf = getattr(os, "sysconf", None)
+    if sysconf is None:
+        return None
+    try:
+        pages = int(sysconf("SC_AVPHYS_PAGES"))
+        page_size = int(sysconf("SC_PAGE_SIZE"))
+    except (OSError, TypeError, ValueError):
+        return None
+    if pages < 0 or page_size < 1:
+        return None
+    return pages * page_size
+
+
 def available_memory_bytes() -> int | None:
     """Best-effort available-memory query without an optional dependency."""
     candidates: list[int] = []
-    try:
-        with open("/proc/meminfo", encoding="ascii") as meminfo:
-            for line in meminfo:
-                if line.startswith("MemAvailable:"):
-                    candidates.append(int(line.split()[1]) * 1024)
-                    break
-    except (OSError, ValueError, IndexError):
-        pass
+    if sys.platform.startswith("linux"):
+        try:
+            with open("/proc/meminfo", encoding="ascii") as meminfo:
+                for line in meminfo:
+                    if line.startswith("MemAvailable:"):
+                        candidates.append(int(line.split()[1]) * 1024)
+                        break
+        except (OSError, ValueError, IndexError):
+            pass
 
-    cgroup_available = _cgroup_available_bytes()
-    if cgroup_available is not None:
-        candidates.append(cgroup_available)
+        cgroup_available = _cgroup_available_bytes()
+        if cgroup_available is not None:
+            candidates.append(cgroup_available)
     if candidates:
         return min(candidates)
 
@@ -127,6 +144,8 @@ def available_memory_bytes() -> int | None:
                 return int(status.available_physical)
         except (AttributeError, OSError, ValueError):
             pass
+    if os.name == "posix":
+        return _sysconf_available_bytes()
     return None
 
 

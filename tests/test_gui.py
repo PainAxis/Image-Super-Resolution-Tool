@@ -1,5 +1,6 @@
-"""Tk lifecycle smoke tests (run under Xvfb in CI)."""
+"""Tk lifecycle smoke tests; CI requires a native or virtual display."""
 
+import os
 import time
 import tkinter as tk
 from pathlib import Path
@@ -17,7 +18,9 @@ from sr_tool.gui.app import Application
 def application() -> tuple[Application, tk.Tk]:
     try:
         root = tk.Tk()
-    except tk.TclError:
+    except tk.TclError as exc:
+        if os.environ.get("SR_TOOL_REQUIRE_DISPLAY") == "1":
+            pytest.fail(f"Tk display is required in CI: {exc}", pytrace=False)
         pytest.skip("Tk display is unavailable; CI runs this test under Xvfb")
     root.withdraw()
     app = Application(root)

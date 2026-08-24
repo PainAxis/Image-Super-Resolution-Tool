@@ -27,7 +27,7 @@ halos and removes reflection seams caused by exact integer sample positions.
 
 ## Requirements and installation
 
-- Python 3.11 or newer
+- Python 3.10 or newer on Windows, macOS or Linux
 - Tk (normally bundled on Windows/macOS; on Debian/Ubuntu install `python3-tk`)
 
 For a reproducible runtime:
@@ -103,8 +103,10 @@ python -m pip_audit -r requirements.txt
 python -m build
 ```
 
-Tk lifecycle tests run under Xvfb in CI. Core coverage has an enforced 80%
-floor; GUI event glue is exercised separately by the Xvfb smoke test.
+CI exercises the Python 3.10 and current 3.14 boundaries on Ubuntu, Windows
+and macOS. Tk lifecycle tests run under Xvfb on Ubuntu and natively on the
+Windows/macOS hosted runners. Core coverage has an enforced 80% floor; GUI
+event glue is exercised separately by the platform smoke tests.
 
 Reproduce a performance measurement instead of relying on a machine-independent
 speed claim:

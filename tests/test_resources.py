@@ -53,3 +53,9 @@ def test_unlimited_cgroup_counter_is_ignored(tmp_path: Path) -> None:
     (tmp_path / "memory.max").write_text("max\n", encoding="ascii")
     (tmp_path / "memory.current").write_text("375\n", encoding="ascii")
     assert resources._cgroup_available_bytes(tmp_path) is None
+
+
+def test_posix_sysconf_memory_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    values = {"SC_AVPHYS_PAGES": 100, "SC_PAGE_SIZE": 4096}
+    monkeypatch.setattr(resources.os, "sysconf", values.__getitem__)
+    assert resources._sysconf_available_bytes() == 409_600

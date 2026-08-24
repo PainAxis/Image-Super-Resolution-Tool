@@ -338,6 +338,29 @@ def _encode_image(
     return image, options
 
 
+def _sync_parent_directory(directory: Path) -> None:
+    """Best-effort directory sync after replace on supporting POSIX filesystems."""
+    if os.name == "nt":
+        return
+    descriptor: int | None = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        descriptor = os.open(directory, flags)
+        os.fsync(descriptor)
+    except OSError:
+        # Directory fsync is unavailable on some macOS, network and FUSE
+        # filesystems. The file itself was synced before the atomic replace,
+        # so lack of directory durability must not turn a successful save into
+        # a false failure after the destination has already changed.
+        pass
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 def save_image(
     arr: np.ndarray,
     path: str | os.PathLike[str],
@@ -366,12 +389,7 @@ def save_image(
         with temporary.open("rb") as saved:
             os.fsync(saved.fileno())
         os.replace(temporary, destination)
-        if os.name != "nt":
-            directory_descriptor = os.open(destination.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
+        _sync_parent_directory(destination.parent)
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
