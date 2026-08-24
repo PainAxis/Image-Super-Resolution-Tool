@@ -15,8 +15,9 @@
 
     "btn_open": "Open Image",
     "lbl_scale": "Scale:",
-    "lbl_sharpness": "Sharpness:",
+    "lbl_sharpness": "RCAS reduction (stops; 0=max):",
     "btn_process": "Process",
+    "btn_cancel": "Cancel",
     "btn_save": "Save Result",
     "chk_antialias": "Anti-Alias",
 
@@ -27,6 +28,8 @@
     "status_loaded": "Loaded: {name}  ({w}x{h})",
     "status_processing": "Processing... {scale}x upscale",
     "status_progress": "Processing... {pct}%",
+    "status_cancelling": "Cancelling...",
+    "status_cancelled": "Cancelled",
     "status_complete": "Complete: {w}x{h}  ({scale}x, {elapsed:.1f}s)",
     "status_error": "Error",
     "status_saved": "Saved: {name}",
@@ -35,14 +38,16 @@
     "dialog_save_title": "Save Result",
     "dialog_error_title": "Error",
     "dialog_about_title": "About",
-    "dialog_about_text": "Image Super-Resolution\n\nSuper-resolution engine: AMD FidelityFX Super Resolution 1.0\nFXAA anti-aliasing\nImplemented in Python + NumPy\n\nDeveloper: https://github.com/PainAxis",
+    "dialog_about_text": "Image Super-Resolution\n\nCPU/NumPy ports of AMD FidelityFX FSR 1.0 EASU/RCAS and NVIDIA FXAA 3.11.\n\nDeveloper: https://github.com/PainAxis",
     "dialog_load_failed": "Failed to load image:\n{error}",
     "dialog_process_failed": "Processing failed:\n{error}",
     "dialog_save_failed": "Failed to save:\n{error}",
+    "error_out_of_memory": "The operation ran out of memory. Try a smaller image or scale factor.",
 
     "filetype_images": "Image files",
     "filetype_all": "All files",
     "filetype_png": "PNG",
+    "filetype_tiff": "TIFF",
     "filetype_jpeg": "JPEG",
     "filetype_bmp": "BMP"
 }

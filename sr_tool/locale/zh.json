@@ -16,8 +16,9 @@
 
     "btn_open": "打开图片",
     "lbl_scale": "缩放:",
-    "lbl_sharpness": "锐化:",
+    "lbl_sharpness": "RCAS 衰减（档；0=最强）:",
     "btn_process": "处理",
+    "btn_cancel": "取消",
     "btn_save": "保存结果",
     "chk_antialias": "抗锯齿",
 
@@ -28,6 +29,8 @@
     "status_loaded": "已加载: {name}  ({w}x{h})",
     "status_processing": "处理中... {scale}x 放大",
     "status_progress": "处理中... {pct}%",
+    "status_cancelling": "正在取消...",
+    "status_cancelled": "已取消",
     "status_complete": "完成: {w}x{h}  ({scale}x, {elapsed:.1f}s)",
     "status_error": "错误",
     "status_saved": "已保存: {name}",
@@ -36,14 +39,16 @@
     "dialog_save_title": "保存结果",
     "dialog_error_title": "错误",
     "dialog_about_title": "关于",
-    "dialog_about_text": "图片超分辨率\n\n超分辨率引擎: AMD FidelityFX Super Resolution 1.0\nFXAA 抗锯齿\nPython + NumPy 实现\n\n开发者: https://github.com/PainAxis",
+    "dialog_about_text": "图片超分辨率\n\n基于 CPU/NumPy 移植 AMD FidelityFX FSR 1.0 EASU/RCAS 与 NVIDIA FXAA 3.11。\n\n开发者: https://github.com/PainAxis",
     "dialog_load_failed": "图片加载失败:\n{error}",
     "dialog_process_failed": "处理失败:\n{error}",
     "dialog_save_failed": "保存失败:\n{error}",
+    "error_out_of_memory": "处理时内存不足，请减小图片尺寸或缩放倍数。",
 
     "filetype_images": "图片文件",
     "filetype_all": "所有文件",
     "filetype_png": "PNG",
+    "filetype_tiff": "TIFF",
     "filetype_jpeg": "JPEG",
     "filetype_bmp": "BMP"
 }

@@ -16,8 +16,9 @@
 
     "btn_open": "Открыть",
     "lbl_scale": "Масштаб:",
-    "lbl_sharpness": "Резкость:",
+    "lbl_sharpness": "RCAS (ступени; 0=макс.):",
     "btn_process": "Обработать",
+    "btn_cancel": "Отмена",
     "btn_save": "Сохранить",
     "chk_antialias": "Сглаживание",
 
@@ -28,6 +29,8 @@
     "status_loaded": "Загружено: {name}  ({w}x{h})",
     "status_processing": "Обработка... x{scale}",
     "status_progress": "Обработка... {pct}%",
+    "status_cancelling": "Отмена...",
+    "status_cancelled": "Отменено",
     "status_complete": "Готово: {w}x{h}  (x{scale}, {elapsed:.1f}с)",
     "status_error": "Ошибка",
     "status_saved": "Сохранено: {name}",
@@ -36,14 +39,16 @@
     "dialog_save_title": "Сохранить результат",
     "dialog_error_title": "Ошибка",
     "dialog_about_title": "О программе",
-    "dialog_about_text": "Сверхразрешение изображений\n\nДвижок: AMD FidelityFX Super Resolution 1.0\nСглаживание FXAA\nРеализовано на Python + NumPy\n\nРазработчик: https://github.com/PainAxis",
+    "dialog_about_text": "Сверхразрешение изображений\n\nCPU/NumPy-порты AMD FidelityFX FSR 1.0 EASU/RCAS и NVIDIA FXAA 3.11.\n\nРазработчик: https://github.com/PainAxis",
     "dialog_load_failed": "Не удалось загрузить:\n{error}",
     "dialog_process_failed": "Ошибка обработки:\n{error}",
     "dialog_save_failed": "Не удалось сохранить:\n{error}",
+    "error_out_of_memory": "Недостаточно памяти. Уменьшите изображение или масштаб.",
 
     "filetype_images": "Изображения",
     "filetype_all": "Все файлы",
     "filetype_png": "PNG",
+    "filetype_tiff": "TIFF",
     "filetype_jpeg": "JPEG",
     "filetype_bmp": "BMP"
 }

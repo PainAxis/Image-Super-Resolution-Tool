@@ -1,130 +1,147 @@
-"""RCAS -- Robust Contrast-Adaptive Sharpening (super-resolution pass 2).
+"""AMD FidelityFX Super Resolution 1.0 RCAS, ported to NumPy."""
 
-Applies adaptive sharpening that respects local contrast:
-- Stronger sharpening in high-contrast (textured) areas
-- Weaker sharpening in low-contrast (flat) areas to avoid amplifying noise
-- Clamps output to local neighborhood range to prevent ringing artifacts.
+from __future__ import annotations
 
-Processes the image in blocks to keep peak memory low on large outputs.
-"""
-
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import numpy as np
 
-# RCAS algorithm constants (from AMD FidelityFX Super Resolution)
-_NEIGHBOR_COUNT = 4.0     # cardinal neighbors: left, right, up, down
-_GAIN_DENOM_SCALE = 8.0   # denominator scaling for adaptive gain
-_EPSILON = 1e-9           # prevents division by zero in flat regions
+from sr_tool.fsr.common import CancelCallback, check_cancelled, validate_rgb_image
 
-DEFAULT_SHARPNESS = 0.25  # AMD-specified default sharpening strength
-
-# Block processing
-_RCAS_BLOCK = 512          # output pixels per block side
-_RCAS_OVERLAP = 2          # 1px neighbor + 1px safety margin
+# AMD reference: GPUOpen-Effects/FidelityFX-FSR, ffx-fsr/ffx_fsr1.h.
+DEFAULT_SHARPNESS = 0.2
+MAX_SHARPNESS_STOPS = 2.0
+_RCAS_LIMIT = np.float32(0.25 - 1.0 / 16.0)
+_RCAS_BLOCK = 512
 
 
-def _rcas_core(center: np.ndarray,
-               left: np.ndarray,
-               right: np.ndarray,
-               up: np.ndarray,
-               down: np.ndarray,
-               sharpness: float) -> np.ndarray:
-    """Core RCAS computation on pre-extracted neighbor views.
+def _safe_divide(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
+    """Divide without NaNs for the flat black/white 0/0 cases."""
+    result = np.zeros_like(numerator, dtype=np.float32)
+    np.divide(numerator, denominator, out=result, where=denominator != 0.0)
+    return result
 
-    All inputs are float32 (H, W, 3) in [0, 1].
+
+def _rcas_core(
+    center: np.ndarray,
+    left: np.ndarray,
+    right: np.ndarray,
+    up: np.ndarray,
+    down: np.ndarray,
+    sharpness: float,
+    denoise: bool = False,
+) -> np.ndarray:
+    """Vectorized translation of the reference ``FsrRcasF`` function."""
+    ring_min = np.minimum.reduce((up, left, right, down))
+    ring_max = np.maximum.reduce((up, left, right, down))
+
+    hit_min = _safe_divide(
+        np.minimum(ring_min, center),
+        np.float32(4.0) * ring_max,
+    )
+    hit_max = _safe_divide(
+        np.float32(1.0) - np.maximum(ring_max, center),
+        np.float32(4.0) * ring_min - np.float32(4.0),
+    )
+    channel_lobes = np.maximum(-hit_min, hit_max)
+    lobe = np.clip(
+        np.max(channel_lobes, axis=2),
+        -_RCAS_LIMIT,
+        np.float32(0.0),
+    )
+    lobe *= np.float32(2.0 ** -sharpness)
+
+    if denoise:
+        luma_up = up[..., 1] + np.float32(0.5) * (up[..., 0] + up[..., 2])
+        luma_left = left[..., 1] + np.float32(0.5) * (left[..., 0] + left[..., 2])
+        luma_center = center[..., 1] + np.float32(0.5) * (
+            center[..., 0] + center[..., 2]
+        )
+        luma_right = right[..., 1] + np.float32(0.5) * (
+            right[..., 0] + right[..., 2]
+        )
+        luma_down = down[..., 1] + np.float32(0.5) * (down[..., 0] + down[..., 2])
+        luma_max = np.maximum.reduce(
+            (luma_up, luma_left, luma_center, luma_right, luma_down)
+        )
+        luma_min = np.minimum.reduce(
+            (luma_up, luma_left, luma_center, luma_right, luma_down)
+        )
+        noise = np.abs(
+            np.float32(0.25)
+            * (luma_up + luma_left + luma_right + luma_down)
+            - luma_center
+        )
+        noise = np.clip(_safe_divide(noise, luma_max - luma_min), 0.0, 1.0)
+        lobe *= np.float32(1.0) - np.float32(0.5) * noise
+
+    neighbor_sum = up + left + right + down
+    denominator = np.float32(4.0) * lobe + np.float32(1.0)
+    result = (lobe[..., None] * neighbor_sum + center) / denominator[..., None]
+    # The reference limiter keeps values in gamut. Clip only float round-off.
+    return np.clip(result, 0.0, 1.0).astype(np.float32, copy=False)
+
+
+def rcas(
+    img: np.ndarray,
+    sharpness: float = DEFAULT_SHARPNESS,
+    progress_callback: Callable[[float], None] | None = None,
+    cancel_callback: CancelCallback | None = None,
+    *,
+    denoise: bool = False,
+    block_size: int = _RCAS_BLOCK,
+) -> np.ndarray:
+    """Sharpen an RGB image with AMD FSR 1.0 RCAS.
+
+    ``sharpness`` uses AMD's stop scale: 0 is maximum sharpening and larger
+    values halve the effect once per stop. This application exposes [0, 2].
+    ``denoise`` enables the optional, more expensive reference path.
     """
-    n_sum = left + right + up + down
-    n_min = np.minimum(np.minimum(left, right), np.minimum(up, down))
-    n_max = np.maximum(np.maximum(left, right), np.maximum(up, down))
-    n_avg = n_sum / _NEIGHBOR_COUNT
-
-    contrast = n_max - n_min
-    deviation = np.abs(_NEIGHBOR_COUNT * center - n_sum)
-
-    gain = 1.0 - deviation / (_GAIN_DENOM_SCALE * contrast + _EPSILON)
-    gain = np.clip(gain, 0.0, 1.0)
-
-    sharpened = center + sharpness * gain * (center - n_avg)
-    sharpened = np.clip(sharpened, n_min, n_max)
-    return np.clip(sharpened, 0.0, 1.0)
-
-
-def rcas(img: np.ndarray,
-         sharpness: float = DEFAULT_SHARPNESS,
-         progress_callback: Optional[Callable[[float], None]] = None,
-         ) -> np.ndarray:
-    """Apply RCAS sharpening to an image.
-
-    Args:
-        img: float32 (H, W, 3) array in [0, 1].
-        sharpness: sharpening strength, range [0, 1]. Default 0.25 (AMD spec).
-        progress_callback: optional callable(fraction: float), 0→1 within RCAS.
-
-    Returns:
-        float32 (H, W, 3) array in [0, 1].
-    """
+    source = validate_rgb_image(img)
     sharpness = float(sharpness)
-    if sharpness <= 0.0:
-        return img.copy()
+    if not np.isfinite(sharpness) or not 0.0 <= sharpness <= MAX_SHARPNESS_STOPS:
+        raise ValueError("sharpness must be finite and in [0, 2] stops")
+    if isinstance(block_size, bool) or not isinstance(block_size, (int, np.integer)):
+        raise TypeError("block_size must be an integer")
+    if block_size < 1:
+        raise ValueError("block_size must be at least 1")
 
-    h, w = img.shape[:2]
-    _cb = progress_callback
+    check_cancelled(cancel_callback)
+    height, width = source.shape[:2]
+    output = np.empty_like(source)
+    vertical_blocks = (height + block_size - 1) // block_size
+    horizontal_blocks = (width + block_size - 1) // block_size
+    total_blocks = vertical_blocks * horizontal_blocks
+    completed = 0
 
-    # For small images, process whole image at once
-    if h <= _RCAS_BLOCK and w <= _RCAS_BLOCK:
-        padded = np.pad(img, ((1, 1), (1, 1), (0, 0)), mode="edge")
-        center = img
-        left   = padded[1:h + 1, 0:w, :]
-        right  = padded[1:h + 1, 2:w + 2, :]
-        up     = padded[0:h, 1:w + 1, :]
-        down   = padded[2:h + 2, 1:w + 1, :]
-        result = _rcas_core(center, left, right, up, down, sharpness)
-        if _cb is not None:
-            _cb(1.0)
-        return result
-
-    # Block processing for large images
-    padded = np.pad(img, ((_RCAS_OVERLAP, _RCAS_OVERLAP),
-                           (_RCAS_OVERLAP, _RCAS_OVERLAP),
-                           (0, 0)), mode="edge")
-    output = np.empty_like(img)
-
-    n_by = (h + _RCAS_BLOCK - 1) // _RCAS_BLOCK
-    n_bx = (w + _RCAS_BLOCK - 1) // _RCAS_BLOCK
-    total_blocks = n_by * n_bx
-    block_idx = 0
-
-    for by in range(0, h, _RCAS_BLOCK):
-        bh = min(_RCAS_BLOCK, h - by)
-        for bx in range(0, w, _RCAS_BLOCK):
-            bw = min(_RCAS_BLOCK, w - bx)
-
-            # Source region in padded image (with overlap for neighbor access)
-            py0 = by
-            py1 = by + bh + 2 * _RCAS_OVERLAP
-            px0 = bx
-            px1 = bx + bw + 2 * _RCAS_OVERLAP
-
-            patch = padded[py0:py1, px0:px1, :]
-            ph, pw = patch.shape[:2]
-
-            center = patch[_RCAS_OVERLAP:ph - _RCAS_OVERLAP,
-                           _RCAS_OVERLAP:pw - _RCAS_OVERLAP, :]
-            left   = patch[_RCAS_OVERLAP:ph - _RCAS_OVERLAP,
-                           _RCAS_OVERLAP - 1:pw - _RCAS_OVERLAP - 1, :]
-            right  = patch[_RCAS_OVERLAP:ph - _RCAS_OVERLAP,
-                           _RCAS_OVERLAP + 1:pw - _RCAS_OVERLAP + 1, :]
-            up     = patch[_RCAS_OVERLAP - 1:ph - _RCAS_OVERLAP - 1,
-                           _RCAS_OVERLAP:pw - _RCAS_OVERLAP, :]
-            down   = patch[_RCAS_OVERLAP + 1:ph - _RCAS_OVERLAP + 1,
-                           _RCAS_OVERLAP:pw - _RCAS_OVERLAP, :]
-
-            output[by:by + bh, bx:bx + bw, :] = _rcas_core(
-                center, left, right, up, down, sharpness)
-
-            block_idx += 1
-            if _cb is not None:
-                _cb(block_idx / total_blocks)
+    for y_start in range(0, height, block_size):
+        check_cancelled(cancel_callback)
+        y_stop = min(y_start + block_size, height)
+        y = np.arange(y_start, y_stop, dtype=np.intp)
+        y_up = np.maximum(y - 1, 0)
+        y_down = np.minimum(y + 1, height - 1)
+        for x_start in range(0, width, block_size):
+            check_cancelled(cancel_callback)
+            x_stop = min(x_start + block_size, width)
+            x = np.arange(x_start, x_stop, dtype=np.intp)
+            x_left = np.maximum(x - 1, 0)
+            x_right = np.minimum(x + 1, width - 1)
+            center = source[y_start:y_stop, x_start:x_stop]
+            left = source[y[:, None], x_left[None, :]]
+            right = source[y[:, None], x_right[None, :]]
+            up = source[y_up[:, None], x[None, :]]
+            down = source[y_down[:, None], x[None, :]]
+            output[y_start:y_stop, x_start:x_stop] = _rcas_core(
+                center,
+                left,
+                right,
+                up,
+                down,
+                sharpness,
+                denoise,
+            )
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(completed / total_blocks)
 
     return output

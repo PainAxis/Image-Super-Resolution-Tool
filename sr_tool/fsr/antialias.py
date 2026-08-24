@@ -1,235 +1,334 @@
-"""FXAA -- Fast Approximate Anti-Aliasing (post-processing).
+"""NVIDIA FXAA 3.11 quality path, adapted for NumPy image arrays.
 
-A lightweight anti-aliasing filter that smooths jagged edges by detecting
-luma discontinuities and blending pixels along edge directions.
-
-Based on FXAA 3.11 by Timothy Lottes (NVIDIA), adapted to NumPy.
-Processes images in blocks to keep peak memory bounded.
+The implementation follows ``FxaaPixelShader`` with quality preset 12. It
+uses perceptual BT.601 luma (the reference RGBL integration path) and samples
+in global image coordinates so block size does not affect output pixels.
 """
+
+from __future__ import annotations
+
+from collections.abc import Callable
 
 import numpy as np
 
-# FXAA quality presets
-_EDGE_THRESHOLD = 0.0833       # minimum luma contrast to consider an edge
-_EDGE_THRESHOLD_MIN = 0.0312   # minimum for dark areas
-_SUBPIX_QUALITY = 0.75         # sub-pixel AA strength [0, 1]
-_ITERATIONS = 12               # endpoint search iterations
+from sr_tool.fsr.common import (
+    CancelCallback,
+    check_cancelled,
+    validate_rgb_image,
+    validate_unit_interval,
+)
 
-# Block processing
-_FXAA_BLOCK = 512              # output pixels per block side
-_FXAA_OVERLAP = 16             # 12x search + 1px neighbor + 3px margin
+# FXAA 3.11 reference defaults and quality preset 12.
+_EDGE_THRESHOLD = 0.166
+_EDGE_THRESHOLD_MIN = 0.0833
+_SUBPIX_QUALITY = 0.75
+_QUALITY_STEPS = (1.0, 1.5, 2.0, 4.0, 12.0)
+_ITERATIONS = 12  # Compatibility cap; preset 12 contains five search steps.
+_FXAA_BLOCK = 512
 
 
 def _rgb2luma(rgb: np.ndarray) -> np.ndarray:
-    """Convert RGB float32 array to luma (BT.709)."""
-    return (rgb[:, :, 0] * 0.2126 +
-            rgb[:, :, 1] * 0.7152 +
-            rgb[:, :, 2] * 0.0722)
+    """Return perceptual BT.601 luma as required by the RGBL FXAA path."""
+    return (
+        rgb[..., 0] * np.float32(0.299)
+        + rgb[..., 1] * np.float32(0.587)
+        + rgb[..., 2] * np.float32(0.114)
+    )
 
 
-def _safe_int32(arr: np.ndarray) -> np.ndarray:
-    """Safely cast float array to int32, guarding against NaN/Inf."""
-    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-    return arr.astype(np.int32)
+def _gather(plane: np.ndarray, y: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """Gather integer coordinates with clamp-to-edge addressing."""
+    height, width = plane.shape[:2]
+    return plane[np.clip(y, 0, height - 1), np.clip(x, 0, width - 1)]
 
 
-def _sample_luma(luma: np.ndarray, y: np.ndarray, x: np.ndarray) -> np.ndarray:
-    """Bilinearly sample luma at sub-pixel positions (y, x)."""
-    h, w = luma.shape
-    x = np.clip(x, 0.0, w - 1.001)
-    y = np.clip(y, 0.0, h - 1.001)
+def _sample_bilinear(
+    plane: np.ndarray,
+    y: np.ndarray,
+    x: np.ndarray,
+) -> np.ndarray:
+    """Sample a 2-D or channel-last array at pixel-center coordinates."""
+    height, width = plane.shape[:2]
+    x = np.clip(np.asarray(x, dtype=np.float32), 0.0, float(width - 1))
+    y = np.clip(np.asarray(y, dtype=np.float32), 0.0, float(height - 1))
+    x0 = np.floor(x).astype(np.intp)
+    y0 = np.floor(y).astype(np.intp)
+    x1 = np.minimum(x0 + 1, width - 1)
+    y1 = np.minimum(y0 + 1, height - 1)
+    fraction_x = x - x0.astype(np.float32)
+    fraction_y = y - y0.astype(np.float32)
+    if plane.ndim == 3:
+        fraction_x = fraction_x[..., None]
+        fraction_y = fraction_y[..., None]
+    top = plane[y0, x0] * (1.0 - fraction_x) + plane[y0, x1] * fraction_x
+    bottom = plane[y1, x0] * (1.0 - fraction_x) + plane[y1, x1] * fraction_x
+    return top * (1.0 - fraction_y) + bottom * fraction_y
 
-    ix = _safe_int32(np.floor(x))
-    iy = _safe_int32(np.floor(y))
-    fx = x - ix.astype(np.float32)
-    fy = y - iy.astype(np.float32)
 
-    ix1 = np.clip(ix + 1, 0, w - 1)
-    iy1 = np.clip(iy + 1, 0, h - 1)
+def _fxaa_region(
+    img: np.ndarray,
+    luma: np.ndarray,
+    y_start: int,
+    y_stop: int,
+    x_start: int,
+    x_stop: int,
+    edge_threshold: float,
+    edge_threshold_min: float,
+    subpix_quality: float,
+    quality_steps: tuple[float, ...],
+) -> np.ndarray:
+    """Apply the FXAA shader logic to a rectangular global output region."""
+    y_int = np.arange(y_start, y_stop, dtype=np.intp)[:, None]
+    x_int = np.arange(x_start, x_stop, dtype=np.intp)[None, :]
+    tile_shape = (y_stop - y_start, x_stop - x_start)
+    y = np.broadcast_to(y_int, tile_shape)
+    x = np.broadcast_to(x_int, tile_shape)
+    y_float = y.astype(np.float32)
+    x_float = x.astype(np.float32)
 
-    top = luma[iy, ix] * (1 - fx) + luma[iy, ix1] * fx
-    bottom = luma[iy1, ix] * (1 - fx) + luma[iy1, ix1] * fx
-    return top * (1 - fy) + bottom * fy
+    luma_m = _gather(luma, y, x)
+    luma_n = _gather(luma, y - 1, x)
+    luma_s = _gather(luma, y + 1, x)
+    luma_w = _gather(luma, y, x - 1)
+    luma_e = _gather(luma, y, x + 1)
+    range_max = np.maximum.reduce((luma_m, luma_n, luma_s, luma_w, luma_e))
+    range_min = np.minimum.reduce((luma_m, luma_n, luma_s, luma_w, luma_e))
+    luma_range = range_max - range_min
+    active = luma_range >= np.maximum(edge_threshold_min, range_max * edge_threshold)
+    if not np.any(active):
+        return img[y_start:y_stop, x_start:x_stop].copy()
 
+    luma_nw = _gather(luma, y - 1, x - 1)
+    luma_ne = _gather(luma, y - 1, x + 1)
+    luma_sw = _gather(luma, y + 1, x - 1)
+    luma_se = _gather(luma, y + 1, x + 1)
 
-# ---------------------------------------------------------------------------
-# Core FXAA (per-image or per-block, no chunking)
-# ---------------------------------------------------------------------------
-def _fxaa_core(img: np.ndarray,
-               edge_threshold: float = _EDGE_THRESHOLD,
-               edge_threshold_min: float = _EDGE_THRESHOLD_MIN,
-               subpix_quality: float = _SUBPIX_QUALITY,
-               iterations: int = _ITERATIONS) -> np.ndarray:
-    """Apply FXAA to a (H, W, 3) image in [0, 1]."""
+    luma_ns = luma_n + luma_s
+    luma_we = luma_w + luma_e
+    luma_ne_se = luma_ne + luma_se
+    luma_nw_ne = luma_nw + luma_ne
+    luma_nw_sw = luma_nw + luma_sw
+    luma_sw_se = luma_sw + luma_se
+    edge_horizontal = (
+        np.abs((-2.0 * luma_w) + luma_nw_sw)
+        + np.abs((-2.0 * luma_m) + luma_ns) * 2.0
+        + np.abs((-2.0 * luma_e) + luma_ne_se)
+    )
+    edge_vertical = (
+        np.abs((-2.0 * luma_n) + luma_nw_ne)
+        + np.abs((-2.0 * luma_m) + luma_we) * 2.0
+        + np.abs((-2.0 * luma_s) + luma_sw_se)
+    )
+    orientation_tolerance = np.float32(8.0 * np.finfo(np.float32).eps) * np.maximum(
+        1.0, np.maximum(edge_horizontal, edge_vertical)
+    )
+    ambiguous_orientation = (
+        np.abs(edge_horizontal - edge_vertical) <= orientation_tolerance
+    )
+    horizontal_span = edge_horizontal >= edge_vertical
 
-    h, w = img.shape[:2]
-    luma = _rgb2luma(img)
+    subpixel_average = (luma_ns + luma_we) * 2.0 + luma_nw_sw + luma_ne_se
+    subpixel_delta = subpixel_average * np.float32(1.0 / 12.0) - luma_m
+    reciprocal_range = np.zeros_like(luma_range)
+    np.divide(1.0, luma_range, out=reciprocal_range, where=luma_range > 0.0)
+    subpixel = np.clip(np.abs(subpixel_delta) * reciprocal_range, 0.0, 1.0)
+    subpixel = ((-2.0 * subpixel) + 3.0) * subpixel * subpixel
+    subpixel = subpixel * subpixel * subpix_quality
 
-    lp = np.pad(luma, ((1, 1), (1, 1)), mode="edge")
-    luma_n  = lp[0:h,     1:w + 1]
-    luma_s  = lp[2:h + 2, 1:w + 1]
-    luma_w  = lp[1:h + 1, 0:w]
-    luma_e  = lp[1:h + 1, 2:w + 2]
-    luma_nw = lp[0:h,     0:w]
-    luma_ne = lp[0:h,     2:w + 2]
-    luma_sw = lp[2:h + 2, 0:w]
-    luma_se = lp[2:h + 2, 2:w + 2]
+    negative_luma = np.where(horizontal_span, luma_n, luma_w)
+    positive_luma = np.where(horizontal_span, luma_s, luma_e)
+    negative_gradient = negative_luma - luma_m
+    positive_gradient = positive_luma - luma_m
+    absolute_negative_gradient = np.abs(negative_gradient)
+    absolute_positive_gradient = np.abs(positive_gradient)
+    pair_tolerance = np.float32(8.0 * np.finfo(np.float32).eps) * np.maximum(
+        1.0,
+        np.maximum(absolute_negative_gradient, absolute_positive_gradient),
+    )
+    ambiguous_pair = (
+        np.abs(absolute_negative_gradient - absolute_positive_gradient)
+        <= pair_tolerance
+    )
+    pair_negative = absolute_negative_gradient >= absolute_positive_gradient
+    gradient = np.maximum(absolute_negative_gradient, absolute_positive_gradient)
+    length_sign = np.where(pair_negative, -1.0, 1.0).astype(np.float32)
+    paired_luma_sum = np.where(
+        pair_negative,
+        negative_luma + luma_m,
+        positive_luma + luma_m,
+    )
+    local_luma_delta = luma_m - paired_luma_sum * np.float32(0.5)
+    local_luma_negative = local_luma_delta < 0.0
+    gradient_scaled = gradient * np.float32(0.25)
 
-    luma_min = np.minimum(np.minimum(np.minimum(luma_n, luma_s),
-                                     np.minimum(luma_w, luma_e)),
-                          np.minimum(np.minimum(luma_nw, luma_ne),
-                                     np.minimum(luma_sw, luma_se)))
-    luma_max = np.maximum(np.maximum(np.maximum(luma_n, luma_s),
-                                     np.maximum(luma_w, luma_e)),
-                          np.maximum(np.maximum(luma_nw, luma_ne),
-                                     np.maximum(luma_sw, luma_se)))
-    contrast = luma_max - luma_min
+    tangent_x = horizontal_span.astype(np.float32)
+    tangent_y = (~horizontal_span).astype(np.float32)
+    base_x = x_float + np.where(horizontal_span, 0.0, length_sign * 0.5)
+    base_y = y_float + np.where(horizontal_span, length_sign * 0.5, 0.0)
+    first_step = np.float32(quality_steps[0])
+    negative_x = base_x - tangent_x * first_step
+    negative_y = base_y - tangent_y * first_step
+    positive_x = base_x + tangent_x * first_step
+    positive_y = base_y + tangent_y * first_step
+    local_average = paired_luma_sum * np.float32(0.5)
+    negative_end = _sample_bilinear(luma, negative_y, negative_x) - local_average
+    positive_end = _sample_bilinear(luma, positive_y, positive_x) - local_average
+    done_negative = (~active) | (np.abs(negative_end) >= gradient_scaled)
+    done_positive = (~active) | (np.abs(positive_end) >= gradient_scaled)
 
-    threshold = np.maximum(edge_threshold * luma_max, edge_threshold_min)
-    edge_mask = contrast > threshold
-
-    horizontal = (np.abs(luma_n + luma_s - 2 * luma) * 2 +
-                  np.abs(luma_ne + luma_se - 2 * luma_e) +
-                  np.abs(luma_nw + luma_sw - 2 * luma_w))
-    vertical = (np.abs(luma_e + luma_w - 2 * luma) * 2 +
-                np.abs(luma_ne + luma_nw - 2 * luma_n) +
-                np.abs(luma_se + luma_sw - 2 * luma_s))
-    is_horizontal = edge_mask & (horizontal >= vertical)
-
-    luma_avg_neighbors = (luma_n + luma_s + luma_w + luma_e) / 4.0
-    subpix_amount = np.clip(
-        (np.abs(luma_avg_neighbors - luma) / (contrast + 1e-9)) * subpix_quality,
-        0.0, 1.0)
-    subpix_amount = np.where(contrast > 1e-6, subpix_amount, 0.0)
-
-    # ---- endpoint search (edge pixels only) ----
-    yy_full, xx_full = np.mgrid[0:h, 0:w].astype(np.float32)
-    dir_x = np.where(is_horizontal, 1.0, 0.0)
-    dir_y = np.where(is_horizontal, 0.0, 1.0)
-
-    pos_end_luma = np.zeros_like(luma)
-    neg_end_luma = np.zeros_like(luma)
-    search_luma_pos = np.where(edge_mask, luma, 0.0)
-    search_luma_neg = np.where(edge_mask, luma, 0.0)
-
-    need_pos = edge_mask.copy()
-    need_neg = edge_mask.copy()
-
-    for i in range(iterations):
-        if not np.any(need_pos) and not np.any(need_neg):
+    # The final preset distance is intentionally not sampled afterwards. This
+    # mirrors Fxaa3_11.h, where it bounds an unfinished endpoint search.
+    for index, distance in enumerate(quality_steps[1:], start=1):
+        search_negative = ~done_negative
+        search_positive = ~done_positive
+        negative_x = np.where(
+            search_negative, negative_x - tangent_x * distance, negative_x
+        )
+        negative_y = np.where(
+            search_negative, negative_y - tangent_y * distance, negative_y
+        )
+        positive_x = np.where(
+            search_positive, positive_x + tangent_x * distance, positive_x
+        )
+        positive_y = np.where(
+            search_positive, positive_y + tangent_y * distance, positive_y
+        )
+        if index == len(quality_steps) - 1:
             break
-        dist = (i + 1) * 1.0
+        if np.any(search_negative):
+            sampled = _sample_bilinear(luma, negative_y, negative_x) - local_average
+            negative_end = np.where(search_negative, sampled, negative_end)
+            done_negative |= np.abs(negative_end) >= gradient_scaled
+        if np.any(search_positive):
+            sampled = _sample_bilinear(luma, positive_y, positive_x) - local_average
+            positive_end = np.where(search_positive, sampled, positive_end)
+            done_positive |= np.abs(positive_end) >= gradient_scaled
 
-        if np.any(need_pos):
-            sy_pos = np.where(need_pos, yy_full + dir_y * dist, 0.0)
-            sx_pos = np.where(need_pos, xx_full + dir_x * dist, 0.0)
-            sample_pos = _sample_luma(luma, sy_pos, sx_pos)
-            pos_beyond = (sample_pos - luma) * (search_luma_pos - luma) < 0
-            found_pos = need_pos & pos_beyond
-            pos_end_luma = np.where(found_pos, sample_pos, pos_end_luma)
-            need_pos = need_pos & ~found_pos
-            search_luma_pos = np.where(need_pos, sample_pos, search_luma_pos)
+    distance_negative = np.where(
+        horizontal_span,
+        x_float - negative_x,
+        y_float - negative_y,
+    )
+    distance_positive = np.where(
+        horizontal_span,
+        positive_x - x_float,
+        positive_y - y_float,
+    )
+    span_length = distance_negative + distance_positive
+    pixel_offset = np.float32(0.5) - np.minimum(
+        distance_negative, distance_positive
+    ) / span_length
+    good_negative = (negative_end < 0.0) != local_luma_negative
+    good_positive = (positive_end < 0.0) != local_luma_negative
+    direction_negative = distance_negative < distance_positive
+    good_span = np.where(direction_negative, good_negative, good_positive)
+    equal_distance = np.isclose(
+        distance_negative, distance_positive, rtol=1e-6, atol=1e-6
+    )
+    good_span = np.where(equal_distance, good_negative & good_positive, good_span)
+    edge_offset = np.where(good_span, pixel_offset, 0.0)
+    final_offset = np.maximum(edge_offset, subpixel)
+    # The shader resolves exact gradient ties toward one fixed neighbor. On a
+    # CPU still-image filter that creates a directional impulse halo and makes
+    # mirrored inputs differ. Conservatively retain the center in this truly
+    # ambiguous case; non-tied FXAA behavior remains reference-equivalent.
+    final_offset = np.where(ambiguous_pair | ambiguous_orientation, 0.0, final_offset)
 
-        if np.any(need_neg):
-            sy_neg = np.where(need_neg, yy_full - dir_y * dist, 0.0)
-            sx_neg = np.where(need_neg, xx_full - dir_x * dist, 0.0)
-            sample_neg = _sample_luma(luma, sy_neg, sx_neg)
-            neg_beyond = (sample_neg - luma) * (search_luma_neg - luma) < 0
-            found_neg = need_neg & neg_beyond
-            neg_end_luma = np.where(found_neg, sample_neg, neg_end_luma)
-            need_neg = need_neg & ~found_neg
-            search_luma_neg = np.where(need_neg, sample_neg, search_luma_neg)
-
-    pos_end_set = pos_end_luma != 0
-    neg_end_set = neg_end_luma != 0
-
-    # ---- blend amount (edge sub-pixel offset) ----
-    edge_offset: np.ndarray = np.zeros_like(luma)
-    if subpix_quality > 0:
-        edge_test = ((luma_e - luma_w) * 0.5 +
-                     (luma_se - luma_sw) * 0.25 +
-                     (luma_ne - luma_nw) * 0.25)
-        edge_offset = np.where(
-            np.abs(edge_test) > 1e-6,
-            np.clip((luma - luma_w) / (edge_test + 1e-9), -1.0, 1.0) * 0.5,
-            edge_offset)
-
-    blend_amount = np.zeros_like(luma)
-    blend_amount = np.where(
-        edge_mask & pos_end_set & neg_end_set,
-        np.clip((pos_end_luma - luma) /
-                (pos_end_luma - neg_end_luma + 1e-9) - 0.5 + edge_offset,
-                -0.5, 0.5),
-        blend_amount)
-
-    blend_sign = np.sign(blend_amount)
-    blend_amount = blend_sign * np.maximum(
-        np.abs(blend_amount), subpix_amount * subpix_quality)
-    blend_amount = np.clip(blend_amount + 0.5, -0.5, 0.5) + 0.5
-    blend_amount = np.clip(blend_amount, 0.0, 1.0)
-
-    # ---- apply blending ----
-    result = img.copy()
-    for ch in range(3):
-        ch_luma = img[:, :, ch]
-        sample_y = yy_full + np.where(is_horizontal, 0.5, 0.0)
-        sample_x = xx_full + np.where(is_horizontal, 0.0, 0.5)
-        ch_padded = np.pad(ch_luma, ((1, 1), (1, 1)), mode="edge")
-        sample_p = _sample_luma(ch_padded, sample_y + 1, sample_x + 1)
-        sample_n = _sample_luma(ch_padded,
-                                yy_full - np.where(is_horizontal, 0.5, 0.0) + 1,
-                                xx_full - np.where(is_horizontal, 0.0, 0.5) + 1)
-        blended = sample_n * blend_amount + sample_p * (1 - blend_amount)
-        result[:, :, ch] = np.where(edge_mask, blended, ch_luma)
-
-    return np.clip(result, 0.0, 1.0)
+    sample_x = x_float + np.where(horizontal_span, 0.0, final_offset * length_sign)
+    sample_y = y_float + np.where(horizontal_span, final_offset * length_sign, 0.0)
+    filtered = _sample_bilinear(img, sample_y, sample_x)
+    center = img[y_start:y_stop, x_start:x_stop]
+    return np.where(active[..., None], filtered, center).astype(np.float32, copy=False)
 
 
-# ---------------------------------------------------------------------------
-# Public FXAA with block processing for memory efficiency
-# ---------------------------------------------------------------------------
-def fxaa(img: np.ndarray,
-         edge_threshold: float = _EDGE_THRESHOLD,
-         edge_threshold_min: float = _EDGE_THRESHOLD_MIN,
-         subpix_quality: float = _SUBPIX_QUALITY,
-         iterations: int = _ITERATIONS) -> np.ndarray:
-    """Apply FXAA anti-aliasing with block processing.
+def _quality_distances(iterations: int) -> tuple[float, ...]:
+    """Map the legacy iteration cap onto preset 12's fixed search schedule."""
+    if isinstance(iterations, bool) or not isinstance(iterations, (int, np.integer)):
+        raise TypeError("iterations must be an integer")
+    if iterations < 1:
+        raise ValueError("iterations must be at least 1")
+    return _QUALITY_STEPS[: min(iterations, len(_QUALITY_STEPS))]
 
-    Args:
-        img: float32 (H, W, 3) in [0, 1].
-        edge_threshold: luma contrast threshold for edge detection.
-        edge_threshold_min: minimum threshold for very dark areas.
-        subpix_quality: sub-pixel AA strength [0, 1]. 0 = off.
-        iterations: endpoint search steps.
 
-    Returns:
-        float32 (H, W, 3) anti-aliased image in [0, 1].
-    """
-    h, w = img.shape[:2]
+def _fxaa_core(
+    img: np.ndarray,
+    edge_threshold: float = _EDGE_THRESHOLD,
+    edge_threshold_min: float = _EDGE_THRESHOLD_MIN,
+    subpix_quality: float = _SUBPIX_QUALITY,
+    iterations: int = _ITERATIONS,
+) -> np.ndarray:
+    """Apply FXAA without public block iteration (used for conformance tests)."""
+    source = validate_rgb_image(img)
+    edge_threshold = validate_unit_interval("edge_threshold", edge_threshold)
+    edge_threshold_min = validate_unit_interval(
+        "edge_threshold_min", edge_threshold_min
+    )
+    subpix_quality = validate_unit_interval("subpix_quality", subpix_quality)
+    return _fxaa_region(
+        source,
+        _rgb2luma(source),
+        0,
+        source.shape[0],
+        0,
+        source.shape[1],
+        edge_threshold,
+        edge_threshold_min,
+        subpix_quality,
+        _quality_distances(iterations),
+    )
 
-    # Small images: process whole
-    if h <= _FXAA_BLOCK and w <= _FXAA_BLOCK:
-        return _fxaa_core(img, edge_threshold, edge_threshold_min,
-                          subpix_quality, iterations)
 
-    # Large images: block processing with overlap
-    OV = _FXAA_OVERLAP
-    padded = np.pad(img, ((OV, OV), (OV, OV), (0, 0)), mode="edge")
-    output = np.empty_like(img)
+def fxaa(
+    img: np.ndarray,
+    edge_threshold: float = _EDGE_THRESHOLD,
+    edge_threshold_min: float = _EDGE_THRESHOLD_MIN,
+    subpix_quality: float = _SUBPIX_QUALITY,
+    iterations: int = _ITERATIONS,
+    progress_callback: Callable[[float], None] | None = None,
+    cancel_callback: CancelCallback | None = None,
+    *,
+    block_size: int = _FXAA_BLOCK,
+) -> np.ndarray:
+    """Apply FXAA 3.11 quality preset 12 with block-bounded temporaries."""
+    source = validate_rgb_image(img)
+    edge_threshold = validate_unit_interval("edge_threshold", edge_threshold)
+    edge_threshold_min = validate_unit_interval(
+        "edge_threshold_min", edge_threshold_min
+    )
+    subpix_quality = validate_unit_interval("subpix_quality", subpix_quality)
+    quality_steps = _quality_distances(iterations)
+    if isinstance(block_size, bool) or not isinstance(block_size, (int, np.integer)):
+        raise TypeError("block_size must be an integer")
+    if block_size < 1:
+        raise ValueError("block_size must be at least 1")
 
-    for by in range(0, h, _FXAA_BLOCK):
-        bh = min(_FXAA_BLOCK, h - by)
-        for bx in range(0, w, _FXAA_BLOCK):
-            bw = min(_FXAA_BLOCK, w - bx)
-
-            py0, py1 = by, by + bh + 2 * OV
-            px0, px1 = bx, bx + bw + 2 * OV
-            patch = padded[py0:py1, px0:px1, :]
-
-            result_patch = _fxaa_core(patch, edge_threshold, edge_threshold_min,
-                                      subpix_quality, iterations)
-            # Extract interior: discard overlap border
-            interior = result_patch[OV:OV + bh, OV:OV + bw, :]
-            output[by:by + bh, bx:bx + bw, :] = interior
-
-    return output
+    check_cancelled(cancel_callback)
+    height, width = source.shape[:2]
+    luma = _rgb2luma(source)
+    output = np.empty_like(source)
+    vertical_blocks = (height + block_size - 1) // block_size
+    horizontal_blocks = (width + block_size - 1) // block_size
+    total_blocks = vertical_blocks * horizontal_blocks
+    completed = 0
+    for y_start in range(0, height, block_size):
+        check_cancelled(cancel_callback)
+        y_stop = min(y_start + block_size, height)
+        for x_start in range(0, width, block_size):
+            check_cancelled(cancel_callback)
+            x_stop = min(x_start + block_size, width)
+            output[y_start:y_stop, x_start:x_stop] = _fxaa_region(
+                source,
+                luma,
+                y_start,
+                y_stop,
+                x_start,
+                x_stop,
+                edge_threshold,
+                edge_threshold_min,
+                subpix_quality,
+                quality_steps,
+            )
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(completed / total_blocks)
+    return np.clip(output, 0.0, 1.0)

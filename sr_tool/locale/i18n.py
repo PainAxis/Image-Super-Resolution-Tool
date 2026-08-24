@@ -8,13 +8,13 @@ widgets can refresh their text.
 import json
 import threading
 import traceback
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Dict
 
 _LOCALE_DIR = Path(__file__).resolve().parent.parent / "locale"
 
 # Thread-safe translation cache
-_LANGS: Dict[str, Dict[str, str]] = {}
+_LANGS: dict[str, dict[str, str]] = {}
 _LANGS_LOCK = threading.Lock()
 
 # Current language code
@@ -24,7 +24,7 @@ _current_lang = "en"
 _listeners: list[Callable[[], None]] = []
 
 
-def _load(lang: str) -> Dict[str, str]:
+def _load(lang: str) -> dict[str, str]:
     path = _LOCALE_DIR / f"{lang}.json"
     if not path.exists():
         raise FileNotFoundError(f"Language file not found: {path}")
@@ -32,9 +32,9 @@ def _load(lang: str) -> Dict[str, str]:
         return json.load(f)
 
 
-def available_languages() -> Dict[str, str]:
+def available_languages() -> dict[str, str]:
     """Return {code: display_name} for all available languages."""
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     for f_path in sorted(_LOCALE_DIR.glob("*.json")):
         try:
             data = json.loads(f_path.read_text(encoding="utf-8"))
@@ -46,7 +46,7 @@ def available_languages() -> Dict[str, str]:
     return result
 
 
-def _get_or_load(lang: str) -> Dict[str, str]:
+def _get_or_load(lang: str) -> dict[str, str]:
     """Thread-safe lazy-load of a language translation table."""
     # Fast path: read under lock
     with _LANGS_LOCK:
@@ -85,7 +85,7 @@ def set_language(lang: str) -> None:
     for listener in _listeners:
         try:
             listener()
-        except Exception:
+        except Exception:  # noqa: BLE001 - one listener must not break the others
             traceback.print_exc()
 
 
@@ -93,7 +93,7 @@ def current_language() -> str:
     return _current_lang
 
 
-def t(key: str, **kwargs) -> str:
+def t(key: str, **kwargs: object) -> str:
     """Return the translation for *key* in the current language.
 
     Format parameters can be passed as keyword arguments. Thread-safe.
@@ -130,7 +130,7 @@ def _detect_system_lang() -> str:
     """Detect system language; returns a language code or 'en'."""
     import locale as _locale
     try:
-        sys_lang = _locale.getdefaultlocale()[0]
+        sys_lang = _locale.getlocale()[0]
         if sys_lang:
             sys_lang = sys_lang.lower()
             for code in available_languages():

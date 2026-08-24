@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install Tk and virtual display
+        run: sudo apt-get update && sudo apt-get install --yes python3-tk xvfb
+      - name: Install project
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Lint
+        run: python -m ruff check .
+      - name: Type check
+        run: python -m mypy sr_tool run.py
+      - name: Test with coverage
+        run: xvfb-run -a python -m coverage run -m pytest && python -m coverage report
+      - name: Static security scan
+        run: python -m bandit -q -r sr_tool
+      - name: Dependency audit
+        run: python -m pip_audit -r requirements.txt
+      - name: Build distributions
+        run: python -m build

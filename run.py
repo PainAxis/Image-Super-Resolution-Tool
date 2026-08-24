@@ -1,20 +1,6 @@
-"""Launch script for Image Super-Resolution tool."""
+"""Backward-compatible source checkout launcher."""
 
-import sys
-import os
-
-# Ensure sr_tool is importable
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from sr_tool.gui.app import Application
-import tkinter as tk
-
-
-def main():
-    root = tk.Tk()
-    Application(root)
-    root.mainloop()
-
+from sr_tool.__main__ import main
 
 if __name__ == "__main__":
     main()
