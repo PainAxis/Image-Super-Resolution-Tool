@@ -129,6 +129,7 @@ _LANGS["en"] = _load("en")
 def _detect_system_lang() -> str:
     """Detect system language; returns a language code or 'en'."""
     import locale as _locale
+
     try:
         sys_lang = _locale.getlocale()[0]
         if sys_lang:

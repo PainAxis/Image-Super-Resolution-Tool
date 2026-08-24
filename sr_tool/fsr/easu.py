@@ -166,28 +166,44 @@ def _easu_grid(
         direction_y,
         edge_length,
         (one - fraction_x) * (one - fraction_y),
-        lumas["b"], lumas["e"], lumas["f"], lumas["g"], lumas["j"],
+        lumas["b"],
+        lumas["e"],
+        lumas["f"],
+        lumas["g"],
+        lumas["j"],
     )
     _accumulate_direction(
         direction_x,
         direction_y,
         edge_length,
         fraction_x * (one - fraction_y),
-        lumas["c"], lumas["f"], lumas["g"], lumas["h"], lumas["k"],
+        lumas["c"],
+        lumas["f"],
+        lumas["g"],
+        lumas["h"],
+        lumas["k"],
     )
     _accumulate_direction(
         direction_x,
         direction_y,
         edge_length,
         (one - fraction_x) * fraction_y,
-        lumas["f"], lumas["i"], lumas["j"], lumas["k"], lumas["n"],
+        lumas["f"],
+        lumas["i"],
+        lumas["j"],
+        lumas["k"],
+        lumas["n"],
     )
     _accumulate_direction(
         direction_x,
         direction_y,
         edge_length,
         fraction_x * fraction_y,
-        lumas["g"], lumas["j"], lumas["k"], lumas["l"], lumas["o"],
+        lumas["g"],
+        lumas["j"],
+        lumas["k"],
+        lumas["l"],
+        lumas["o"],
     )
 
     direction_squared = direction_x * direction_x + direction_y * direction_y
@@ -275,13 +291,11 @@ def _easu_tile(
     output_y = np.arange(y_start, y_stop, dtype=np.float64)[:, None]
     output_x = np.arange(x_start, x_stop, dtype=np.float64)[None, :]
 
-    source_y = (
-        output_y * (input_height / output_height)
-        + (0.5 * input_height / output_height - 0.5)
+    source_y = output_y * (input_height / output_height) + (
+        0.5 * input_height / output_height - 0.5
     )
-    source_x = (
-        output_x * (input_width / output_width)
-        + (0.5 * input_width / output_width - 0.5)
+    source_x = output_x * (input_width / output_width) + (
+        0.5 * input_width / output_width - 0.5
     )
     source_y = np.where(
         np.abs(source_y - np.rint(source_y)) < 1e-12,
@@ -320,9 +334,7 @@ def _easu_tile(
             fraction_y[:, boundary_x],
             np.ones_like(fraction_x[:, boundary_x]),
         )
-        result[:, boundary_x] = (
-            result[:, boundary_x] + alternate_x
-        ) * np.float32(0.5)
+        result[:, boundary_x] = (result[:, boundary_x] + alternate_x) * np.float32(0.5)
     if boundary_y.size:
         alternate_y = _easu_grid(
             img,
@@ -342,9 +354,7 @@ def _easu_tile(
             alternate_y[:, boundary_x] = (
                 alternate_y[:, boundary_x] + alternate_xy
             ) * np.float32(0.5)
-        result[boundary_y] = (
-            result[boundary_y] + alternate_y
-        ) * np.float32(0.5)
+        result[boundary_y] = (result[boundary_y] + alternate_y) * np.float32(0.5)
     return result
 
 
@@ -360,6 +370,8 @@ def easu(
 
     ``scale`` must be finite and in [1, 4]. The returned dimensions are the
     input dimensions multiplied by ``scale`` and rounded to the nearest pixel.
+    AMD documents good quality through 4x area scaling (2x per dimension);
+    larger linear factors are supported here as explicit project extensions.
     """
     source = validate_rgb_image(img)
     scale = float(scale)

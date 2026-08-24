@@ -215,9 +215,9 @@ def _fxaa_region(
         positive_y - y_float,
     )
     span_length = distance_negative + distance_positive
-    pixel_offset = np.float32(0.5) - np.minimum(
-        distance_negative, distance_positive
-    ) / span_length
+    pixel_offset = (
+        np.float32(0.5) - np.minimum(distance_negative, distance_positive) / span_length
+    )
     good_negative = (negative_end < 0.0) != local_luma_negative
     good_positive = (positive_end < 0.0) != local_luma_negative
     direction_negative = distance_negative < distance_positive

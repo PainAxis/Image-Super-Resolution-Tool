@@ -95,6 +95,33 @@ def test_sixteen_bit_color_is_rejected_before_pillow_reduces_it(
         load_image_document(path)
 
 
+@pytest.mark.parametrize(
+    ("name", "values", "message"),
+    [
+        (
+            "signed-32-bit",
+            np.array([[0, 1, 65535]], dtype=np.int32),
+            "32-bit integer TIFF",
+        ),
+        (
+            "floating-point",
+            np.array([[0.0, 0.5, 1.0]], dtype=np.float32),
+            "Floating-point TIFF",
+        ),
+    ],
+)
+def test_unsupported_tiff_precision_is_rejected_instead_of_requantized(
+    tmp_path: Path,
+    name: str,
+    values: np.ndarray,
+    message: str,
+) -> None:
+    source = tmp_path / f"{name}.tiff"
+    Image.fromarray(values).save(source)
+    with pytest.raises(ImageIOError, match=message):
+        load_image_document(source)
+
+
 def test_icc_profile_is_converted_and_preserved(tmp_path: Path) -> None:
     profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
     source = tmp_path / "profiled.png"
@@ -107,6 +134,51 @@ def test_icc_profile_is_converted_and_preserved(tmp_path: Path) -> None:
     save_image_document(document, output)
     with Image.open(output) as saved:
         assert saved.info.get("icc_profile")
+
+
+def test_non_rgb_icc_profile_is_converted_from_its_native_mode(
+    tmp_path: Path,
+) -> None:
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("LAB")).tobytes()
+    source = tmp_path / "profiled-lab.tiff"
+    Image.new("LAB", (2, 2), (128, 140, 120)).save(source, icc_profile=profile)
+
+    document = load_image_document(source)
+
+    assert document.rgb.shape == (2, 2, 3)
+    assert document.rgb.dtype == np.float32
+    assert document.metadata.icc_profile
+    np.testing.assert_allclose(
+        document.rgb[0, 0],
+        np.array([135, 113, 133], dtype=np.float32) / 255.0,
+        atol=1.0 / 255.0,
+    )
+
+
+def test_palette_icc_profile_uses_rgb_fallback_and_preserves_alpha(
+    tmp_path: Path,
+) -> None:
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    palette = Image.new("P", (2, 1))
+    palette.putpalette([255, 0, 0, 0, 255, 0] + [0] * (256 * 3 - 6))
+    palette.putdata([0, 1])
+    source = tmp_path / "profiled-palette.png"
+    palette.save(source, icc_profile=profile, transparency=0)
+
+    document = load_image_document(source)
+
+    assert document.alpha is not None
+    np.testing.assert_array_equal(document.alpha, [[0.0, 1.0]])
+    np.testing.assert_allclose(document.rgb[0, 0], [1.0, 0.0, 0.0], atol=1e-7)
+    np.testing.assert_allclose(document.rgb[0, 1], [0.0, 1.0, 0.0], atol=1e-7)
+    assert document.metadata.icc_profile
+
+
+def test_invalid_icc_profile_is_reported_as_an_image_error(tmp_path: Path) -> None:
+    source = tmp_path / "invalid-profile.png"
+    Image.new("RGB", (2, 2)).save(source, icc_profile=b"not-an-icc-profile")
+    with pytest.raises(ImageIOError, match="Invalid or unsupported ICC profile"):
+        load_image_document(source)
 
 
 def test_alpha_resize_contract() -> None:
@@ -137,6 +209,25 @@ def test_incompatible_formats_fail_instead_of_dropping_data(tmp_path: Path) -> N
             tmp_path / "deep.jpg",
             metadata=ImageMetadata(bit_depth=16, grayscale=True),
         )
+    with pytest.raises(ImageIOError, match="8-bit and 16-bit"):
+        save_image(
+            rgb,
+            tmp_path / "unsupported-depth.png",
+            metadata=ImageMetadata(bit_depth=32, grayscale=True),
+        )
+
+
+def test_bmp_omits_unsupported_color_profile_metadata(tmp_path: Path) -> None:
+    profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    destination = tmp_path / "profiled.bmp"
+    save_image(
+        np.full((2, 2, 3), 0.5, dtype=np.float32),
+        destination,
+        metadata=ImageMetadata(icc_profile=profile, dpi=(96.0, 96.0)),
+    )
+    with Image.open(destination) as saved:
+        assert "icc_profile" not in saved.info
+        assert saved.info["dpi"] == pytest.approx((96.0, 96.0), rel=0.01)
 
 
 def test_failed_save_does_not_replace_existing_file(

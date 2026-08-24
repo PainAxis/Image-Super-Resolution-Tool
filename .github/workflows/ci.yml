@@ -22,8 +22,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.10", "3.14"]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -56,8 +56,8 @@ jobs:
     name: Quality, security and distributions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -69,6 +69,8 @@ jobs:
           python -m pip check
       - name: Lint for Python 3.10 syntax
         run: python -m ruff check .
+      - name: Check formatting
+        run: python -m ruff format --check .
       - name: Type check against Python 3.10
         run: python -m mypy sr_tool run.py
       - name: Static security scan
@@ -77,3 +79,52 @@ jobs:
         run: python -m pip_audit -r requirements.txt
       - name: Build distributions
         run: python -m build
+      - name: Verify distributions
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+          python -I -c "import sr_tool; from sr_tool.__main__ import main"
+          python - <<'PY'
+          import glob
+          import tarfile
+          import zipfile
+
+          source_archive, = glob.glob("dist/*.tar.gz")
+          with tarfile.open(source_archive) as archive:
+              names = set(archive.getnames())
+          root, = {name.split("/", 1)[0] for name in names}
+          required_source = {
+              "LICENSE",
+              "NOTICE",
+              "PERFORMANCE.md",
+              "README.md",
+              "SECURITY.md",
+              "benchmarks/benchmark_pipeline.py",
+              "requirements-dev.txt",
+              "requirements.txt",
+              "run.py",
+              "tests/test_pipeline.py",
+          }
+          missing = sorted(
+              path for path in required_source if f"{root}/{path}" not in names
+          )
+          if missing:
+              raise SystemExit(f"sdist is missing: {missing}")
+
+          wheel, = glob.glob("dist/*.whl")
+          with zipfile.ZipFile(wheel) as archive:
+              wheel_names = set(archive.namelist())
+          required_wheel_suffixes = {
+              "licenses/LICENSE",
+              "licenses/NOTICE",
+              "sr_tool/locale/en.json",
+              "sr_tool/locale/ru.json",
+              "sr_tool/locale/zh.json",
+          }
+          missing = sorted(
+              suffix
+              for suffix in required_wheel_suffixes
+              if not any(name.endswith(suffix) for name in wheel_names)
+          )
+          if missing:
+              raise SystemExit(f"wheel is missing: {missing}")
+          PY

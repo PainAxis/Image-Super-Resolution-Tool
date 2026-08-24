@@ -67,9 +67,7 @@ def process_image(
     result = rcas(
         result,
         sharpness=rcas_sharpness,
-        progress_callback=_map_progress(
-            progress_callback, easu_weight, rcas_weight
-        ),
+        progress_callback=_map_progress(progress_callback, easu_weight, rcas_weight),
         cancel_callback=cancel_callback,
         denoise=rcas_denoise,
     )

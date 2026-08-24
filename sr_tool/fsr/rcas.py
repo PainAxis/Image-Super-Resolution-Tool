@@ -49,7 +49,7 @@ def _rcas_core(
         -_RCAS_LIMIT,
         np.float32(0.0),
     )
-    lobe *= np.float32(2.0 ** -sharpness)
+    lobe *= np.float32(2.0**-sharpness)
 
     if denoise:
         luma_up = up[..., 1] + np.float32(0.5) * (up[..., 0] + up[..., 2])
@@ -57,9 +57,7 @@ def _rcas_core(
         luma_center = center[..., 1] + np.float32(0.5) * (
             center[..., 0] + center[..., 2]
         )
-        luma_right = right[..., 1] + np.float32(0.5) * (
-            right[..., 0] + right[..., 2]
-        )
+        luma_right = right[..., 1] + np.float32(0.5) * (right[..., 0] + right[..., 2])
         luma_down = down[..., 1] + np.float32(0.5) * (down[..., 0] + down[..., 2])
         luma_max = np.maximum.reduce(
             (luma_up, luma_left, luma_center, luma_right, luma_down)
@@ -68,8 +66,7 @@ def _rcas_core(
             (luma_up, luma_left, luma_center, luma_right, luma_down)
         )
         noise = np.abs(
-            np.float32(0.25)
-            * (luma_up + luma_left + luma_right + luma_down)
+            np.float32(0.25) * (luma_up + luma_left + luma_right + luma_down)
             - luma_center
         )
         noise = np.clip(_safe_divide(noise, luma_max - luma_min), 0.0, 1.0)

@@ -18,6 +18,8 @@ from sr_tool.utils.resources import ensure_input_size
 _TEXT_METADATA_LIMIT = 1024 * 1024
 _ALPHA_FORMATS = {".png", ".tif", ".tiff"}
 _SIXTEEN_BIT_FORMATS = {".png", ".tif", ".tiff"}
+_ICC_FORMATS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+_EXIF_FORMATS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 
 class ImageIOError(ValueError):
@@ -54,11 +56,22 @@ class ImageDocument:
         return ImageDocument(rgb=rgb, alpha=alpha, metadata=self.metadata)
 
 
-def _reject_unsupported_high_depth_color(
+def _integer_tag_values(value: Any) -> tuple[int, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, int):
+        return (value,)
+    try:
+        return tuple(int(item) for item in value)
+    except (TypeError, ValueError):
+        return ()
+
+
+def _source_bit_depth(
     source_path: Path,
     opened: Image.Image,
-) -> None:
-    """Prevent Pillow from silently reducing unsupported 16-bit RGB to 8-bit."""
+) -> int:
+    """Return a supported source depth or reject lossy Pillow coercions."""
     if opened.format == "PNG":
         try:
             with source_path.open("rb") as source:
@@ -66,26 +79,66 @@ def _reject_unsupported_high_depth_color(
         except OSError as exc:
             raise ImageIOError(f"Could not inspect PNG header: {exc}") from exc
         png_signature = b"\x89PNG\r\n\x1a\n"
-        if (
+        if not (
             len(header) >= 26
             and header[:8] == png_signature
             and header[12:16] == b"IHDR"
-            and header[24] == 16
-            and header[25] in {2, 4, 6}
         ):
-            raise ImageIOError(
-                "16-bit color PNG is not supported without precision loss; "
-                "convert to 16-bit grayscale or an 8-bit color image first"
-            )
+            raise ImageIOError("Could not inspect PNG precision")
+        bit_depth = int(header[24])
+        color_type = int(header[25])
+        if bit_depth == 16:
+            if color_type != 0:
+                raise ImageIOError(
+                    "16-bit color PNG is not supported without precision loss; "
+                    "convert to 16-bit grayscale or an 8-bit color image first"
+                )
+            return 16
+        return 8
+
     if opened.format == "TIFF" and hasattr(opened, "tag_v2"):
-        bits = opened.tag_v2.get(258, ())
-        if isinstance(bits, int):
-            bits = (bits,)
-        if any(int(value) > 8 for value in bits) and len(bits) > 1:
+        bits = _integer_tag_values(opened.tag_v2.get(258))
+        sample_formats = _integer_tag_values(opened.tag_v2.get(339)) or (1,)
+        if not bits and (opened.mode == "I" or opened.mode.startswith("I;16")):
             raise ImageIOError(
-                "16-bit color TIFF is not supported without precision loss; "
-                "convert to 16-bit grayscale or an 8-bit color image first"
+                "Could not determine TIFF integer precision without risking data loss"
             )
+        if not bits and opened.mode == "F":
+            raise ImageIOError(
+                "Floating-point TIFF is not supported without precision loss"
+            )
+        if any(sample_format == 3 for sample_format in sample_formats):
+            raise ImageIOError(
+                "Floating-point TIFF is not supported without precision loss"
+            )
+        if any(sample_format == 2 for sample_format in sample_formats):
+            precision = max(bits, default=0)
+            raise ImageIOError(
+                f"Signed {precision}-bit integer TIFF is not supported without "
+                "precision loss"
+            )
+        if any(sample_format != 1 for sample_format in sample_formats):
+            raise ImageIOError("Unsupported TIFF sample format")
+        if any(bit_depth > 8 for bit_depth in bits):
+            if bits == (16,):
+                return 16
+            precision = max(bits)
+            kind = "color" if len(bits) > 1 else "grayscale"
+            raise ImageIOError(
+                f"{precision}-bit {kind} TIFF is not supported without precision "
+                "loss; convert to 16-bit grayscale or an 8-bit image first"
+            )
+        return 8
+
+    if opened.mode == "F":
+        raise ImageIOError(
+            "Floating-point image data is not supported without precision loss"
+        )
+    if opened.mode == "I" or opened.mode.startswith("I;16"):
+        raise ImageIOError(
+            "This integer image precision is not supported without precision loss"
+        )
+    return 8
 
 
 def _bounded_png_text(img: Image.Image) -> tuple[tuple[str, str], ...]:
@@ -117,21 +170,31 @@ def _normalized_dpi(value: Any) -> tuple[float, float] | None:
 
 
 def _convert_profile(
-    rgb_image: Image.Image,
+    source_image: Image.Image,
     icc_profile: bytes | None,
 ) -> tuple[Image.Image, bytes | None]:
     """Convert an embedded profile to sRGB instead of merely relabeling data."""
     if not icc_profile:
-        return rgb_image, None
+        return source_image.convert("RGB"), None
     try:
         source_profile = ImageCms.ImageCmsProfile(BytesIO(icc_profile))
         destination_profile = ImageCms.createProfile("sRGB")
-        converted = ImageCms.profileToProfile(
-            rgb_image,
-            source_profile,
-            destination_profile,
-            outputMode="RGB",
-        )
+        try:
+            converted = ImageCms.profileToProfile(
+                source_image,
+                source_profile,
+                destination_profile,
+                outputMode="RGB",
+            )
+        except (OSError, ValueError, ImageCms.PyCMSError):
+            if source_image.mode not in {"1", "L", "LA", "P", "RGB", "RGBA"}:
+                raise
+            converted = ImageCms.profileToProfile(
+                source_image.convert("RGB"),
+                source_profile,
+                destination_profile,
+                outputMode="RGB",
+            )
         if converted is None:
             raise ImageIOError("ICC conversion returned no image")
         destination_bytes = ImageCms.ImageCmsProfile(destination_profile).tobytes()
@@ -146,14 +209,13 @@ def load_image_document(path: str | os.PathLike[str]) -> ImageDocument:
     try:
         with Image.open(source_path) as opened:
             ensure_input_size(opened.height, opened.width)
-            _reject_unsupported_high_depth_color(source_path, opened)
+            bit_depth = _source_bit_depth(source_path, opened)
             source_format = opened.format
             source_info = dict(opened.info)
             oriented = ImageOps.exif_transpose(opened)
             ensure_input_size(oriented.height, oriented.width)
             mode = oriented.mode
             grayscale = mode in {"1", "L", "LA", "I", "F"} or mode.startswith("I;16")
-            bit_depth = 16 if mode.startswith("I;16") else 8
 
             alpha: np.ndarray | None = None
             has_alpha = "A" in mode or (mode == "P" and "transparency" in source_info)
@@ -161,9 +223,7 @@ def load_image_document(path: str | os.PathLike[str]) -> ImageDocument:
                 alpha_image = oriented.convert("RGBA").getchannel("A")
                 alpha = np.asarray(alpha_image, dtype=np.float32) / np.float32(255.0)
 
-            if mode.startswith("I;16") or (
-                mode == "I" and source_format in {"PNG", "TIFF"}
-            ):
+            if bit_depth == 16:
                 raw = np.asarray(oriented)
                 if raw.size == 0 or int(np.min(raw)) < 0 or int(np.max(raw)) > 65535:
                     raise ImageIOError(
@@ -171,21 +231,10 @@ def load_image_document(path: str | os.PathLike[str]) -> ImageDocument:
                     )
                 gray = raw.astype(np.float32) / np.float32(65535.0)
                 rgb = np.repeat(gray[..., None], 3, axis=2)
-                bit_depth = 16
-                output_profile = source_info.get("icc_profile")
-            elif mode == "F":
-                gray = np.asarray(oriented, dtype=np.float32)
-                if not np.isfinite(gray).all() or float(np.min(gray)) < 0.0 or float(
-                    np.max(gray)
-                ) > 1.0:
-                    raise ImageIOError(
-                        "Floating-point image data must already be in [0, 1]"
-                    )
-                rgb = np.repeat(gray[..., None], 3, axis=2)
                 output_profile = source_info.get("icc_profile")
             else:
                 rgb_image, output_profile = _convert_profile(
-                    oriented.convert("RGB"), source_info.get("icc_profile")
+                    oriented, source_info.get("icc_profile")
                 )
                 rgb = np.asarray(rgb_image, dtype=np.float32) / np.float32(255.0)
 
@@ -295,6 +344,8 @@ def _encode_image(
                 "This output format cannot preserve transparency; use PNG or TIFF"
             )
 
+    if metadata.bit_depth not in {8, 16}:
+        raise ImageIOError("Only 8-bit and 16-bit image metadata is supported")
     if metadata.bit_depth == 16:
         if extension not in _SIXTEEN_BIT_FORMATS:
             raise ImageIOError(
@@ -319,10 +370,10 @@ def _encode_image(
             image = Image.fromarray(np.dstack((rgb8, alpha8)))
 
     options: dict[str, Any] = {}
-    if metadata.icc_profile:
+    if metadata.icc_profile and extension in _ICC_FORMATS:
         options["icc_profile"] = metadata.icc_profile
     exif = _updated_exif(metadata.exif, width, height)
-    if exif:
+    if exif and extension in _EXIF_FORMATS:
         options["exif"] = exif
     if metadata.dpi:
         options["dpi"] = metadata.dpi

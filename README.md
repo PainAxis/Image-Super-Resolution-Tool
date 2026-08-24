@@ -9,7 +9,7 @@ the source image.
 
 ## Features
 
-- 2×, 3× and 4× EASU upscaling using the official FSR 1.0 12-tap structure.
+- 2×, 3× and 4× EASU upscaling using the FSR 1.0 12-tap structure.
 - RCAS sharpening with AMD's stop scale: `0` is strongest and `2` is one
   quarter of that effect.
 - Optional FXAA 3.11 quality preset 12.
@@ -24,13 +24,18 @@ the source image.
 The CPU ports retain the upstream kernels and add conservative handling for
 mathematically ambiguous directions. This prevents single-direction impulse
 halos and removes reflection seams caused by exact integer sample positions.
+AMD documents good EASU quality over a 1×–4× *area* range, so 2× linear
+scaling is within that range. The original 3×/4× options are retained as
+single-pass project extensions; they use the same kernel but do not carry an
+upstream quality guarantee.
 
 ## Requirements and installation
 
 - Python 3.10 or newer on Windows, macOS or Linux
 - Tk (normally bundled on Windows/macOS; on Debian/Ubuntu install `python3-tk`)
 
-For a reproducible runtime:
+From a source checkout or extracted source distribution, create a reproducible
+runtime with:
 
 ```bash
 python -m venv .venv
@@ -52,7 +57,8 @@ image-super-resolution
 2. Select 2×, 3× or 4×.
 3. Select the RCAS reduction in stops (`0` = maximum sharpening) and whether
    to apply FXAA.
-4. Start processing. Press **Cancel** or Escape to stop at the next tile.
+4. Start processing. Press **Cancel** or Escape to stop at the next cooperative
+   boundary (an algorithm tile or alpha post-processing boundary).
 5. Drag or use the mouse wheel in either pane; the other pane follows the same
    logical source region.
 6. Save the result. The write is atomic, so an encoder failure does not replace
@@ -60,9 +66,12 @@ image-super-resolution
 
 ## Image fidelity
 
-The loader applies EXIF orientation, converts valid embedded ICC profiles to
-sRGB, and carries safe EXIF/DPI/text metadata to the result. Straight alpha is
-resized separately and preserved in PNG/TIFF output.
+The loader applies EXIF orientation and converts valid embedded ICC profiles on
+8-bit images from their native color mode to sRGB. Lossless 16-bit grayscale
+keeps its original profile because Pillow cannot color-convert it without
+reducing precision. Safe EXIF/DPI/text metadata is carried when the destination
+encoder supports it. Straight alpha is resized separately and preserved in
+PNG/TIFF output.
 
 | Data | Supported behavior |
 |---|---|
@@ -70,9 +79,12 @@ resized separately and preserved in PNG/TIFF output.
 | 8-bit alpha | Preserved with PNG or TIFF output |
 | 16-bit grayscale | Loaded without 8-bit truncation; PNG/TIFF output remains 16-bit |
 | 16-bit color | Rejected rather than silently reduced to 8-bit |
+| Signed integer or floating-point TIFF | Rejected rather than silently requantized |
 
 JPEG and BMP cannot preserve transparency. Choosing either for an image with
 alpha produces an explicit error instead of silently discarding it.
+PNG, JPEG and TIFF can embed ICC and EXIF metadata through the supported Pillow
+encoders. BMP output retains DPI but does not embed ICC or EXIF blocks.
 
 ## Resource limits
 
@@ -84,6 +96,7 @@ pixel plus input and tile headroom. Defaults are:
 - 100,000,000 input pixels
 - 150,000,000 output pixels
 - 6 GiB configured memory, further limited to 75% of currently available RAM
+  when the operating system exposes a reliable available-memory counter
 
 A 3840×2160 image at 4× has 132.7 million output pixels and an estimated peak
 of about 4.30 GiB. An 8K image at 4× is rejected by the default output limit.
@@ -92,11 +105,14 @@ Intentional overrides are available through `SR_TOOL_MAX_INPUT_PIXELS`,
 
 ## Development and verification
 
+Run these commands from a source checkout or extracted source distribution:
+
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m pytest
 python -m coverage run -m pytest && python -m coverage report
 python -m ruff check .
+python -m ruff format --check .
 python -m mypy sr_tool run.py
 python -m bandit -q -r sr_tool
 python -m pip_audit -r requirements.txt
@@ -125,6 +141,9 @@ regression policy.
 
 - EASU/RCAS: AMD FidelityFX Super Resolution 1.0, 32-bit reference paths.
 - FXAA: NVIDIA FXAA 3.11 by Timothy Lottes, quality preset 12.
+
+The 3×/4× single-pass modes are application-level extensions outside AMD's
+documented 1×–4× area-quality range, as described above.
 
 See [NOTICE](NOTICE) for upstream copyright and license terms. The project
 itself is available under the [MIT License](LICENSE).

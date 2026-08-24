@@ -60,9 +60,7 @@ def _scalar_easu_pixel(
         normalized_y = min(abs(delta_y) / magnitude_y, 1.0) if magnitude_y else 0.0
         edge_length += (normalized_x**2 + normalized_y**2) * weight
 
-    accumulate(
-        (1.0 - fraction_x) * (1.0 - fraction_y), ("b", "e", "f", "g", "j")
-    )
+    accumulate((1.0 - fraction_x) * (1.0 - fraction_y), ("b", "e", "f", "g", "j"))
     accumulate(fraction_x * (1.0 - fraction_y), ("c", "f", "g", "h", "k"))
     accumulate((1.0 - fraction_x) * fraction_y, ("f", "i", "j", "k", "n"))
     accumulate(fraction_x * fraction_y, ("g", "j", "k", "l", "o"))

@@ -28,9 +28,9 @@ def test_language_switch_fallback_formatting_and_listener() -> None:
         assert i18n.current_language() == "zh"
         assert "已加载" in i18n.t("status_loaded", name="x", w=1, h=2)
         assert i18n.t("missing-key") == "missing-key"
-        assert i18n.t("status_loaded", wrong="value") == i18n._LANGS["zh"][
-            "status_loaded"
-        ]
+        assert (
+            i18n.t("status_loaded", wrong="value") == i18n._LANGS["zh"]["status_loaded"]
+        )
         assert called[-1] == "zh"
     finally:
         i18n.set_language("en")

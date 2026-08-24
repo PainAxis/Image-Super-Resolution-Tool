@@ -18,19 +18,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--height", type=int, default=512)
     parser.add_argument("--scale", type=int, choices=(2, 3, 4), default=2)
     parser.add_argument("--warmups", type=int, default=1)
-    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--repetitions", type=int, default=5)
     parser.add_argument("--fxaa", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    if (
-        args.width < 1
-        or args.height < 1
-        or args.warmups < 0
-        or args.repetitions < 1
-    ):
+    if args.width < 1 or args.height < 1 or args.warmups < 0 or args.repetitions < 1:
         raise SystemExit(
             "dimensions/repetitions must be positive and warmups non-negative"
         )

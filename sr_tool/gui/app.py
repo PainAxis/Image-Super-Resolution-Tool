@@ -197,9 +197,7 @@ class Application:
         second_row.pack(fill=tk.X, pady=(4, 0))
         sharpness_label = tk.Label(second_row, text=t("lbl_sharpness"))
         sharpness_label.pack(side=tk.LEFT, padx=(0, 2))
-        self._live_widgets.append(
-            (sharpness_label, "text", "lbl_sharpness", {})
-        )
+        self._live_widgets.append((sharpness_label, "text", "lbl_sharpness", {}))
         self.sharpness_scale = tk.Scale(
             second_row,
             from_=0.0,
@@ -218,9 +216,7 @@ class Application:
             second_row, text=t("chk_antialias"), variable=self.antialias
         )
         self.antialias_check.pack(side=tk.LEFT, padx=2)
-        self._live_widgets.append(
-            (self.antialias_check, "text", "chk_antialias", {})
-        )
+        self._live_widgets.append((self.antialias_check, "text", "chk_antialias", {}))
         self._processing_controls.extend(
             [self.scale_menu, self.sharpness_scale, self.antialias_check]
         )
@@ -232,22 +228,14 @@ class Application:
             sashwidth=4,
         )
         pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
-        left_frame = tk.LabelFrame(
-            pane, text=t("frame_original"), padx=2, pady=2
-        )
+        left_frame = tk.LabelFrame(pane, text=t("frame_original"), padx=2, pady=2)
         self._live_widgets.append((left_frame, "text", "frame_original", {}))
-        self.left_canvas = tk.Canvas(
-            left_frame, bg="#1e1e1e", highlightthickness=0
-        )
+        self.left_canvas = tk.Canvas(left_frame, bg="#1e1e1e", highlightthickness=0)
         self.left_canvas.pack(fill=tk.BOTH, expand=True)
         pane.add(left_frame, minsize=300)
-        right_frame = tk.LabelFrame(
-            pane, text=t("frame_result"), padx=2, pady=2
-        )
+        right_frame = tk.LabelFrame(pane, text=t("frame_result"), padx=2, pady=2)
         self._live_widgets.append((right_frame, "text", "frame_result", {}))
-        self.right_canvas = tk.Canvas(
-            right_frame, bg="#1e1e1e", highlightthickness=0
-        )
+        self.right_canvas = tk.Canvas(right_frame, bg="#1e1e1e", highlightthickness=0)
         self.right_canvas.pack(fill=tk.BOTH, expand=True)
         pane.add(right_frame, minsize=300)
 
@@ -264,9 +252,7 @@ class Application:
         tk.Label(status_frame, textvariable=self.status_text, anchor=tk.W).pack(
             fill=tk.X, side=tk.LEFT
         )
-        self.progress = ttk.Progressbar(
-            status_frame, mode="determinate", length=200
-        )
+        self.progress = ttk.Progressbar(status_frame, mode="determinate", length=200)
         self.progress.pack(side=tk.RIGHT, padx=4)
 
     def _bind_shortcuts(self) -> None:
@@ -280,9 +266,7 @@ class Application:
     # ------------------------------------------------------------------
     def _bind_canvas_events(self, canvas: tk.Canvas, index: int) -> None:
         canvas.bind("<ButtonPress-1>", lambda event: self._on_pan_start(event))
-        canvas.bind(
-            "<B1-Motion>", lambda event: self._on_pan_drag(event, index)
-        )
+        canvas.bind("<B1-Motion>", lambda event: self._on_pan_drag(event, index))
         canvas.bind("<ButtonRelease-1>", lambda event: self._on_pan_end(event))
         canvas.bind("<MouseWheel>", lambda event: self._on_zoom(event, index))
         canvas.bind("<Button-4>", lambda event: self._on_zoom(event, index))
@@ -394,9 +378,7 @@ class Application:
             if use_low_quality
             else PILImage.Resampling.LANCZOS
         )
-        crop_image = crop_image.resize(
-            (display_width, display_height), resampling
-        )
+        crop_image = crop_image.resize((display_width, display_height), resampling)
         self._canvas_images[index] = ImageTk.PhotoImage(crop_image)
         canvas.create_image(
             origin_x + x1 * zoom_x,
@@ -545,7 +527,11 @@ class Application:
                     result_alpha = image_io.resize_alpha(
                         source_document.alpha, result.shape[:2]
                     )
+                    if cancel_event.is_set():
+                        raise ProcessingCancelled("Image processing was cancelled")
                     result = image_io.unpremultiply_rgb(result, result_alpha)
+                    if cancel_event.is_set():
+                        raise ProcessingCancelled("Image processing was cancelled")
                 result_document = source_document.with_pixels(result, result_alpha)
                 self._after(
                     self._on_complete,
