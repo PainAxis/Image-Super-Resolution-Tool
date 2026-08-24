@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import queue
 import threading
 import time
 import tkinter as tk
@@ -30,6 +31,7 @@ from sr_tool.utils import image_io
 from sr_tool.utils.resources import ensure_pipeline_budget
 
 _PROGRESS_INTERVAL_SECONDS = 1.0 / 30.0
+_UI_CALLBACK_POLL_MS = 10
 
 
 class Application:
@@ -56,6 +58,10 @@ class Application:
         self._job_id = 0
         self._cancel_event: threading.Event | None = None
         self._worker: threading.Thread | None = None
+        self._ui_callbacks: queue.SimpleQueue[tuple[Any, tuple[Any, ...]]] = (
+            queue.SimpleQueue()
+        )
+        self._ui_callback_after: str | None = None
 
         self._live_widgets: list[tuple[tk.Widget, str, str, dict[str, Any]]] = []
         self._processing_controls: list[tk.Widget] = []
@@ -63,15 +69,38 @@ class Application:
         self._build_layout()
         self._bind_shortcuts()
         on_language_change(self._on_language_changed)
+        self._schedule_ui_callback_drain()
 
     def _after(self, function: Any, *args: Any) -> None:
-        """Schedule a callback only while the Tk interpreter is alive."""
+        """Queue a callback for dispatch by the Tk main thread."""
+        if self._closing:
+            return
+        self._ui_callbacks.put((function, args))
+
+    def _schedule_ui_callback_drain(self) -> None:
         if self._closing:
             return
         try:
-            self.root.after(0, function, *args)
-        except (tk.TclError, RuntimeError):
-            pass
+            self._ui_callback_after = self.root.after(
+                _UI_CALLBACK_POLL_MS, self._drain_ui_callbacks
+            )
+        except tk.TclError:
+            self._ui_callback_after = None
+
+    def _drain_ui_callbacks(self) -> None:
+        """Run worker notifications without invoking Tk from worker threads."""
+        self._ui_callback_after = None
+        if self._closing:
+            return
+        try:
+            while not self._closing:
+                try:
+                    function, args = self._ui_callbacks.get_nowait()
+                except queue.Empty:
+                    break
+                function(*args)
+        finally:
+            self._schedule_ui_callback_drain()
 
     def _on_language_changed(self) -> None:
         if self._closing:
@@ -648,6 +677,12 @@ class Application:
         self._closing = True
         if self._cancel_event is not None:
             self._cancel_event.set()
+        if self._ui_callback_after is not None:
+            try:
+                self.root.after_cancel(self._ui_callback_after)
+            except tk.TclError:
+                pass
+            self._ui_callback_after = None
         if self._redraw_after is not None:
             try:
                 self.root.after_cancel(self._redraw_after)

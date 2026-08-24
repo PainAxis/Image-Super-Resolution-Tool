@@ -1,6 +1,7 @@
 """Tk lifecycle smoke tests; CI requires a native or virtual display."""
 
 import os
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -15,7 +16,11 @@ from sr_tool.gui.app import Application
 
 
 @pytest.fixture
-def application() -> tuple[Application, tk.Tk]:
+def application(monkeypatch: pytest.MonkeyPatch) -> tuple[Application, tk.Tk]:
+    def fail_on_error_dialog(title: str, message: str, **_kwargs: Any) -> None:
+        pytest.fail(f"Unexpected error dialog {title!r}: {message}")
+
+    monkeypatch.setattr(app_module.messagebox, "showerror", fail_on_error_dialog)
     try:
         root = tk.Tk()
     except tk.TclError as exc:
@@ -101,6 +106,47 @@ def test_cancel_and_stale_completion_are_safe(
     )
     app._on_complete(3, document, 2, 0.1)
     assert app.result_document is None
+
+
+def test_worker_callbacks_are_dispatched_on_tk_thread(
+    application: tuple[Application, tk.Tk],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, root = application
+    main_thread = threading.get_ident()
+    original_after = root.after
+    observed_threads: list[int] = []
+    submission_errors: list[AssertionError] = []
+
+    def checked_after(ms: int, function: Any = None, *args: Any) -> str:
+        assert threading.get_ident() == main_thread
+        return original_after(ms, function, *args)
+
+    monkeypatch.setattr(root, "after", checked_after)
+
+    def submit() -> None:
+        try:
+            app._after(lambda: observed_threads.append(threading.get_ident()))
+        except AssertionError as exc:  # pragma: no cover - regression sentinel
+            submission_errors.append(exc)
+
+    worker = threading.Thread(target=submit)
+    worker.start()
+    worker.join(timeout=1.0)
+    assert not worker.is_alive()
+
+    deadline = time.monotonic() + 1.0
+
+    def poll() -> None:
+        if observed_threads or time.monotonic() >= deadline:
+            root.quit()
+        else:
+            original_after(10, poll)
+
+    original_after(10, poll)
+    root.mainloop()
+    assert not submission_errors
+    assert observed_threads == [main_thread]
 
 
 def test_cancellation_during_alpha_postprocessing_discards_result(

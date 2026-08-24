@@ -437,7 +437,9 @@ def save_image(
     temporary = Path(temporary_name)
     try:
         image.save(temporary, **options)
-        with temporary.open("rb") as saved:
+        # Windows implements fsync via the writable-handle-only _commit().
+        # Reopen read/write so the durability fence is portable.
+        with temporary.open("r+b") as saved:
             os.fsync(saved.fileno())
         os.replace(temporary, destination)
         _sync_parent_directory(destination.parent)
