@@ -5,7 +5,7 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import pytest
@@ -15,12 +15,8 @@ import sr_tool.gui.app as app_module
 from sr_tool.gui.app import Application
 
 
-@pytest.fixture
-def application(monkeypatch: pytest.MonkeyPatch) -> tuple[Application, tk.Tk]:
-    def fail_on_error_dialog(title: str, message: str, **_kwargs: Any) -> None:
-        pytest.fail(f"Unexpected error dialog {title!r}: {message}")
-
-    monkeypatch.setattr(app_module.messagebox, "showerror", fail_on_error_dialog)
+@pytest.fixture(scope="module")
+def tk_root() -> Iterator[tk.Tk]:
     try:
         root = tk.Tk()
     except tk.TclError as exc:
@@ -28,14 +24,29 @@ def application(monkeypatch: pytest.MonkeyPatch) -> tuple[Application, tk.Tk]:
             pytest.fail(f"Tk display is required in CI: {exc}", pytrace=False)
         pytest.skip("Tk display is unavailable; CI runs this test under Xvfb")
     root.withdraw()
-    app = Application(root)
-    yield app, root
+    yield root
+    root.destroy()
+
+
+@pytest.fixture
+def application(
+    monkeypatch: pytest.MonkeyPatch,
+    tk_root: tk.Tk,
+) -> Iterator[tuple[Application, tk.Toplevel]]:
+    def fail_on_error_dialog(title: str, message: str, **_kwargs: Any) -> None:
+        pytest.fail(f"Unexpected error dialog {title!r}: {message}")
+
+    monkeypatch.setattr(app_module.messagebox, "showerror", fail_on_error_dialog)
+    window = tk.Toplevel(tk_root)
+    window.withdraw()
+    app = Application(window)
+    yield app, window
     if not app._closing:
         app._on_close()
 
 
 def test_open_process_and_save_lifecycle(
-    application: tuple[Application, tk.Tk],
+    application: tuple[Application, tk.Toplevel],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -92,7 +103,7 @@ def test_open_process_and_save_lifecycle(
 
 
 def test_cancel_and_stale_completion_are_safe(
-    application: tuple[Application, tk.Tk],
+    application: tuple[Application, tk.Toplevel],
 ) -> None:
     app, _root = application
     app.processing = True
@@ -109,7 +120,7 @@ def test_cancel_and_stale_completion_are_safe(
 
 
 def test_worker_callbacks_are_dispatched_on_tk_thread(
-    application: tuple[Application, tk.Tk],
+    application: tuple[Application, tk.Toplevel],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app, root = application
@@ -150,7 +161,7 @@ def test_worker_callbacks_are_dispatched_on_tk_thread(
 
 
 def test_cancellation_during_alpha_postprocessing_discards_result(
-    application: tuple[Application, tk.Tk],
+    application: tuple[Application, tk.Toplevel],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app, root = application
