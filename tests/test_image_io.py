@@ -246,7 +246,7 @@ def test_failed_save_does_not_replace_existing_file(
     assert list(tmp_path.iterdir()) == [destination]
 
 
-def test_unsupported_directory_fsync_does_not_report_a_false_failure(
+def test_file_fsync_is_writable_and_directory_fsync_is_best_effort(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -255,6 +255,9 @@ def test_unsupported_directory_fsync_does_not_report_a_false_failure(
     def reject_directory_fsync(descriptor: int) -> None:
         if stat.S_ISDIR(image_io.os.fstat(descriptor).st_mode):
             raise OSError("directory sync is unsupported")
+        # A zero-byte write leaves the image unchanged but fails with EBADF
+        # when the descriptor was opened read-only, as the old implementation was.
+        assert image_io.os.write(descriptor, b"") == 0
         real_fsync(descriptor)
 
     monkeypatch.setattr(image_io.os, "fsync", reject_directory_fsync)
