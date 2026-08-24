@@ -16,7 +16,11 @@ from sr_tool.gui.app import Application
 
 
 @pytest.fixture
-def application() -> tuple[Application, tk.Tk]:
+def application(monkeypatch: pytest.MonkeyPatch) -> tuple[Application, tk.Tk]:
+    def fail_on_error_dialog(title: str, message: str, **_kwargs: Any) -> None:
+        pytest.fail(f"Unexpected error dialog {title!r}: {message}")
+
+    monkeypatch.setattr(app_module.messagebox, "showerror", fail_on_error_dialog)
     try:
         root = tk.Tk()
     except tk.TclError as exc:
