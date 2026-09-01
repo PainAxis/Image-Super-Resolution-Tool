@@ -90,8 +90,10 @@ encoders. BMP output retains DPI but does not embed ICC or EXIF blocks.
 
 The pipeline must still hold the input and full output arrays; “block
 processing” bounds temporary working tiles, not the returned image itself.
-Before allocation it estimates the worst stage at roughly 32 bytes per output
-pixel plus input and tile headroom. Defaults are:
+Before allocation it estimates the worst opaque stage at roughly 32 bytes per
+output pixel plus input and tile headroom. Transparent jobs use a larger budget
+that also covers premultiplication, resized alpha, and final unpremultiplication.
+Image decoding has a separate pre-allocation memory check. Defaults are:
 
 - 100,000,000 input pixels
 - 150,000,000 output pixels
@@ -99,7 +101,9 @@ pixel plus input and tile headroom. Defaults are:
   when the operating system exposes a reliable available-memory counter
 
 A 3840×2160 image at 4× has 132.7 million output pixels and an estimated peak
-of about 4.30 GiB. An 8K image at 4× is rejected by the default output limit.
+of about 4.30 GiB when opaque. The same job with transparency is estimated at
+about 6.40 GiB and is rejected by the default memory limit. An 8K image at 4×
+is rejected by the default output limit.
 Intentional overrides are available through `SR_TOOL_MAX_INPUT_PIXELS`,
 `SR_TOOL_MAX_OUTPUT_PIXELS`, and `SR_TOOL_MAX_MEMORY_MIB`.
 

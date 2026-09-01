@@ -19,6 +19,23 @@ def test_original_and_result_have_same_display_extent() -> None:
     assert source_zoom_y * 80 == pytest.approx(result_zoom_y * 320)
 
 
+def test_different_canvas_sizes_do_not_shift_the_shared_center() -> None:
+    view = ViewState()
+    view.reset(100, 100)
+    view.zoom = 10.0
+    view.center_x = 95.0
+    view.clamp(400, 100)
+
+    narrow = view.image_geometry(100, 100, 100, 100)
+    wide = view.image_geometry(400, 100, 400, 400)
+
+    assert view.center_x == 80.0
+    narrow_center = (50.0 - narrow[2]) / narrow[0]
+    wide_center = (200.0 - wide[2]) / wide[0] / 4.0
+    assert narrow_center == pytest.approx(80.0)
+    assert wide_center == pytest.approx(80.0)
+
+
 def test_zoom_keeps_cursor_on_same_source_point() -> None:
     view = ViewState()
     view.reset(1000, 800)

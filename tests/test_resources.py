@@ -35,6 +35,25 @@ def test_memory_limit(monkeypatch: pytest.MonkeyPatch) -> None:
         resources.ensure_pipeline_budget(10, 10, 2)
 
 
+def test_transparent_pipeline_uses_larger_memory_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SR_TOOL_MAX_MEMORY_MIB", "900")
+    monkeypatch.setattr(resources, "available_memory_bytes", lambda: None)
+    resources.ensure_pipeline_budget(1000, 1000, 4)
+    with pytest.raises(resources.ResourceLimitError, match="Estimated peak memory"):
+        resources.ensure_pipeline_budget(1000, 1000, 4, has_alpha=True)
+
+
+def test_decode_memory_is_checked_before_pixel_allocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SR_TOOL_MAX_MEMORY_MIB", "64")
+    monkeypatch.setattr(resources, "available_memory_bytes", lambda: None)
+    with pytest.raises(resources.ResourceLimitError, match="decode memory"):
+        resources.ensure_input_budget(1000, 1000, has_alpha=True)
+
+
 def test_bad_environment_override_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

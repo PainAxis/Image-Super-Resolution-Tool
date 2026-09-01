@@ -102,7 +102,6 @@ class ViewState:
         """Return image-pixel zoom x/y and common display origin x/y."""
         if image_width < 1 or image_height < 1:
             raise ValueError("image dimensions must be positive")
-        self.clamp(canvas_width, canvas_height)
         scale_x = image_width / self.source_width
         scale_y = image_height / self.source_height
         origin_x, origin_y = self.origin(canvas_width, canvas_height)

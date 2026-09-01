@@ -34,12 +34,14 @@ python -m benchmarks.benchmark_pipeline --width 512 --height 512 --scale 2 --fxa
 Algorithms allocate one full output because that is their return value. Their
 additional working arrays are tiled. The preflight estimate reserves input RGB,
 simultaneous stage buffers, one FXAA luma plane, tile working data, and allocator
-headroom. It intentionally overestimates small jobs; the 512×512 at 2× case is
-reported as 291 MiB.
+headroom. Transparent jobs reserve additional input and output planes for alpha
+premultiplication, resizing, and unpremultiplication. It intentionally
+overestimates small jobs; the opaque 512×512 at 2× case is reported as 291 MiB.
 
-Default limits admit a 3840×2160 input at 4× only when sufficient RAM is
-currently available, and reject 8K at 4× before allocation. See the README for
-explicit environment overrides.
+Default limits admit an opaque 3840×2160 input at 4× only when sufficient RAM
+is currently available. The more conservative transparent-job estimate rejects
+that combination by default, and the output-pixel limit rejects 8K at 4× before
+allocation. See the README for explicit environment overrides.
 
 ## Regression policy
 
