@@ -50,7 +50,7 @@ class Application:
         self.result_image: np.ndarray | None = None
         self.scale_factor = tk.StringVar(value="2")
         self.sharpness = tk.DoubleVar(value=0.2)
-        self.antialias = tk.BooleanVar(value=True)
+        self.antialias = tk.BooleanVar(value=False)
         self.status_text = tk.StringVar(value=t("status_ready"))
         self.processing = False
         self._closing = False
@@ -355,6 +355,11 @@ class Application:
         self._redraw_all(use_low_quality=False)
 
     def _redraw_all(self, use_low_quality: bool | None = None) -> None:
+        if self.source_image is not None:
+            self._view.clamp(
+                max(self.left_canvas.winfo_width(), self.right_canvas.winfo_width()),
+                max(self.left_canvas.winfo_height(), self.right_canvas.winfo_height()),
+            )
         self._redraw(0, use_low_quality)
         self._redraw(1, use_low_quality)
 
@@ -472,6 +477,12 @@ class Application:
             return
         try:
             document = image_io.load_image_document(path)
+        except MemoryError:
+            messagebox.showerror(
+                t("dialog_error_title"),
+                t("dialog_load_failed", error=t("error_out_of_memory")),
+            )
+            return
         except (image_io.ImageIOError, ValueError) as exc:
             messagebox.showerror(
                 t("dialog_error_title"), t("dialog_load_failed", error=str(exc))
@@ -505,7 +516,10 @@ class Application:
         use_antialias = self.antialias.get()
         try:
             ensure_pipeline_budget(
-                source_document.rgb.shape[0], source_document.rgb.shape[1], scale
+                source_document.rgb.shape[0],
+                source_document.rgb.shape[1],
+                scale,
+                has_alpha=source_document.alpha is not None,
             )
         except ValueError as exc:
             messagebox.showerror(

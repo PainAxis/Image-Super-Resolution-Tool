@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -13,7 +14,7 @@ import numpy as np
 from PIL import Image, ImageCms, ImageOps, PngImagePlugin
 
 from sr_tool.fsr.common import validate_rgb_image
-from sr_tool.utils.resources import ensure_input_size
+from sr_tool.utils.resources import ensure_input_budget, ensure_input_size
 
 _TEXT_METADATA_LIMIT = 1024 * 1024
 _ALPHA_FORMATS = {".png", ".tif", ".tiff"}
@@ -203,22 +204,33 @@ def _convert_profile(
         raise ImageIOError(f"Invalid or unsupported ICC profile: {exc}") from exc
 
 
+def _has_transparency(mode: str, info: Mapping[Any, Any]) -> bool:
+    """Recognize explicit alpha and PNG/TIFF transparency-key metadata."""
+    return "A" in mode or "a" in mode or info.get("transparency") is not None
+
+
 def load_image_document(path: str | os.PathLike[str]) -> ImageDocument:
     """Decode an image with orientation, alpha, profile and bit-depth context."""
     source_path = Path(path)
     try:
         with Image.open(source_path) as opened:
             ensure_input_size(opened.height, opened.width)
+            source_info = dict(opened.info)
+            source_has_alpha = _has_transparency(opened.mode, source_info)
+            ensure_input_budget(
+                opened.height,
+                opened.width,
+                has_alpha=source_has_alpha,
+            )
             bit_depth = _source_bit_depth(source_path, opened)
             source_format = opened.format
-            source_info = dict(opened.info)
             oriented = ImageOps.exif_transpose(opened)
             ensure_input_size(oriented.height, oriented.width)
             mode = oriented.mode
             grayscale = mode in {"1", "L", "LA", "I", "F"} or mode.startswith("I;16")
 
             alpha: np.ndarray | None = None
-            has_alpha = "A" in mode or (mode == "P" and "transparency" in source_info)
+            has_alpha = _has_transparency(mode, source_info)
             if has_alpha:
                 alpha_image = oriented.convert("RGBA").getchannel("A")
                 alpha = np.asarray(alpha_image, dtype=np.float32) / np.float32(255.0)

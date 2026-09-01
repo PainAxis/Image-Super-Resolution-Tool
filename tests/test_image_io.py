@@ -174,6 +174,44 @@ def test_palette_icc_profile_uses_rgb_fallback_and_preserves_alpha(
     assert document.metadata.icc_profile
 
 
+@pytest.mark.parametrize(
+    ("mode", "pixels", "transparency", "expected_alpha"),
+    [
+        (
+            "L",
+            np.array([[0, 128, 255]], dtype=np.uint8),
+            128,
+            np.array([[1.0, 0.0, 1.0]], dtype=np.float32),
+        ),
+        (
+            "RGB",
+            np.array([[[255, 0, 0], [0, 255, 0], [0, 0, 255]]], dtype=np.uint8),
+            (0, 255, 0),
+            np.array([[1.0, 0.0, 1.0]], dtype=np.float32),
+        ),
+    ],
+)
+def test_png_transparency_keys_are_preserved(
+    tmp_path: Path,
+    mode: str,
+    pixels: np.ndarray,
+    transparency: int | tuple[int, int, int],
+    expected_alpha: np.ndarray,
+) -> None:
+    source = tmp_path / f"transparency-{mode}.png"
+    Image.fromarray(pixels).save(source, transparency=transparency)
+
+    document = load_image_document(source)
+
+    assert document.alpha is not None
+    np.testing.assert_array_equal(document.alpha, expected_alpha)
+    output = tmp_path / f"transparency-{mode}-output.png"
+    save_image_document(document, output)
+    with Image.open(output) as saved:
+        saved_alpha = np.asarray(saved.convert("RGBA"), dtype=np.uint8)[..., 3]
+    np.testing.assert_array_equal(saved_alpha, expected_alpha * 255)
+
+
 def test_invalid_icc_profile_is_reported_as_an_image_error(tmp_path: Path) -> None:
     source = tmp_path / "invalid-profile.png"
     Image.new("RGB", (2, 2)).save(source, icc_profile=b"not-an-icc-profile")

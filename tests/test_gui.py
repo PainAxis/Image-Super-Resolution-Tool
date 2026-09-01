@@ -62,6 +62,7 @@ def test_open_process_and_save_lifecycle(
     app.open_image()
     assert app.source_document is not None
     assert app.source_document.alpha is not None
+    assert not app.antialias.get()
     assert app.process_btn["state"] == tk.NORMAL
 
     def fake_process(

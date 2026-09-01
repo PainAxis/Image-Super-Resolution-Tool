@@ -11,6 +11,15 @@ DEFAULT_MAX_INPUT_PIXELS = 100_000_000
 DEFAULT_MAX_OUTPUT_PIXELS = 150_000_000
 DEFAULT_MAX_MEMORY_BYTES = 6 * 1024**3
 _BLOCK_WORKING_BYTES = 256 * 1024**2
+_DECODE_WORKING_BYTES = 64 * 1024**2
+_OPAQUE_DECODE_BYTES_PER_PIXEL = 28
+_ALPHA_DECODE_BYTES_PER_PIXEL = 40
+_RGB_INPUT_BYTES_PER_PIXEL = 3 * 4
+_RGB_OUTPUT_BYTES_PER_PIXEL = 32
+# Transparent GUI jobs retain the source document, a premultiplied working
+# copy, alpha planes, and both sides of the final unpremultiply/clip operation.
+_ALPHA_INPUT_BYTES_PER_PIXEL = 28
+_ALPHA_OUTPUT_BYTES_PER_PIXEL = 48
 
 
 class ResourceLimitError(ValueError):
@@ -149,16 +158,60 @@ def available_memory_bytes() -> int | None:
     return None
 
 
-def estimate_peak_resources(height: int, width: int, scale: float) -> ResourceEstimate:
+def _effective_memory_limit() -> int:
+    memory_limit = configured_memory_limit()
+    available = available_memory_bytes()
+    if available is not None:
+        memory_limit = min(memory_limit, int(available * 0.75))
+    return memory_limit
+
+
+def estimate_decode_bytes(height: int, width: int, *, has_alpha: bool) -> int:
+    """Estimate peak bytes while decoding and normalizing an input image."""
+    pixels = int(height) * int(width)
+    bytes_per_pixel = (
+        _ALPHA_DECODE_BYTES_PER_PIXEL if has_alpha else _OPAQUE_DECODE_BYTES_PER_PIXEL
+    )
+    return pixels * bytes_per_pixel + _DECODE_WORKING_BYTES
+
+
+def ensure_input_budget(height: int, width: int, *, has_alpha: bool) -> int:
+    """Reject an input whose decode/normalization peak exceeds safe memory."""
+    ensure_input_size(height, width)
+    estimate = estimate_decode_bytes(height, width, has_alpha=has_alpha)
+    memory_limit = _effective_memory_limit()
+    if estimate > memory_limit:
+        required = estimate / 1024**3
+        allowed = memory_limit / 1024**3
+        raise ResourceLimitError(
+            f"Estimated image decode memory is {required:.2f} GiB, above the safe "
+            f"budget of {allowed:.2f} GiB. Choose a smaller image or set "
+            "SR_TOOL_MAX_MEMORY_MIB intentionally."
+        )
+    return estimate
+
+
+def estimate_peak_resources(
+    height: int,
+    width: int,
+    scale: float,
+    *,
+    has_alpha: bool = False,
+) -> ResourceEstimate:
     """Estimate the pipeline peak, including simultaneous stage buffers."""
     input_pixels = int(height) * int(width)
     output_height = round(height * float(scale))
     output_width = round(width * float(scale))
     output_pixels = output_height * output_width
-    # Source RGB plus two output RGB arrays, a full FXAA luma plane, vectorized
-    # tile temporaries, and allocator/headroom. The factor is deliberately
-    # conservative and is covered by memory-estimator tests.
-    peak_bytes = input_pixels * 3 * 4 + output_pixels * 32 + _BLOCK_WORKING_BYTES
+    if has_alpha:
+        input_bytes = input_pixels * _ALPHA_INPUT_BYTES_PER_PIXEL
+        output_bytes = output_pixels * _ALPHA_OUTPUT_BYTES_PER_PIXEL
+    else:
+        input_bytes = input_pixels * _RGB_INPUT_BYTES_PER_PIXEL
+        output_bytes = output_pixels * _RGB_OUTPUT_BYTES_PER_PIXEL
+    # Include vectorized tile temporaries and allocator/headroom. The alpha
+    # factors also cover the final resize/unpremultiply stage in the GUI.
+    peak_bytes = input_bytes + output_bytes + _BLOCK_WORKING_BYTES
     return ResourceEstimate(input_pixels, output_pixels, peak_bytes)
 
 
@@ -174,8 +227,14 @@ def ensure_input_size(height: int, width: int) -> None:
         )
 
 
-def ensure_pipeline_budget(height: int, width: int, scale: float) -> ResourceEstimate:
-    estimate = estimate_peak_resources(height, width, scale)
+def ensure_pipeline_budget(
+    height: int,
+    width: int,
+    scale: float,
+    *,
+    has_alpha: bool = False,
+) -> ResourceEstimate:
+    estimate = estimate_peak_resources(height, width, scale, has_alpha=has_alpha)
     output_limit = max_output_pixels()
     if estimate.output_pixels > output_limit:
         raise ResourceLimitError(
@@ -184,10 +243,7 @@ def ensure_pipeline_budget(height: int, width: int, scale: float) -> ResourceEst
             "SR_TOOL_MAX_OUTPUT_PIXELS intentionally."
         )
 
-    memory_limit = configured_memory_limit()
-    available = available_memory_bytes()
-    if available is not None:
-        memory_limit = min(memory_limit, int(available * 0.75))
+    memory_limit = _effective_memory_limit()
     if estimate.peak_bytes > memory_limit:
         required = estimate.peak_bytes / 1024**3
         allowed = memory_limit / 1024**3
