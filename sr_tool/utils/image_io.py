@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
@@ -203,7 +204,7 @@ def _convert_profile(
         raise ImageIOError(f"Invalid or unsupported ICC profile: {exc}") from exc
 
 
-def _has_transparency(mode: str, info: dict[str, Any]) -> bool:
+def _has_transparency(mode: str, info: Mapping[Any, Any]) -> bool:
     """Recognize explicit alpha and PNG/TIFF transparency-key metadata."""
     return "A" in mode or "a" in mode or info.get("transparency") is not None
 
