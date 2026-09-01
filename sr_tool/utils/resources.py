@@ -170,9 +170,7 @@ def estimate_decode_bytes(height: int, width: int, *, has_alpha: bool) -> int:
     """Estimate peak bytes while decoding and normalizing an input image."""
     pixels = int(height) * int(width)
     bytes_per_pixel = (
-        _ALPHA_DECODE_BYTES_PER_PIXEL
-        if has_alpha
-        else _OPAQUE_DECODE_BYTES_PER_PIXEL
+        _ALPHA_DECODE_BYTES_PER_PIXEL if has_alpha else _OPAQUE_DECODE_BYTES_PER_PIXEL
     )
     return pixels * bytes_per_pixel + _DECODE_WORKING_BYTES
 
